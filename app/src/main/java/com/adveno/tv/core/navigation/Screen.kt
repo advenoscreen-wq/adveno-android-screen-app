@@ -7,8 +7,18 @@ package com.adveno.tv.core.navigation
 sealed interface Screen {
     val route: String
 
-    data object Home : Screen {
-        override val route: String = "home"
+    data object StartConnecting : Screen {
+        override val route: String = "start_connecting"
     }
-}
 
+    data object ConnectScreen : Screen {
+        override val route: String = "connect_screen"
+    }
+
+    data object ScanToConnect : Screen {
+        override val route: String = "scan_to_connect"
+    }
+
+    // Alias for backward compatibility with initial Home route
+    val Home: Screen get() = StartConnecting
+}

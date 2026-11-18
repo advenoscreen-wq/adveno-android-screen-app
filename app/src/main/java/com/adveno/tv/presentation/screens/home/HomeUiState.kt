@@ -3,14 +3,14 @@ package com.adveno.tv.presentation.screens.home
 import com.adveno.tv.domain.model.ConnectionStatus
 
 /**
- * UI State for the Home screen, modeling Unidirectional Data Flow (UDF).
- * The UI simply renders this immutable state.
+ * UI State for the Start Connecting / Home screen.
+ * Models Unidirectional Data Flow (UDF).
  */
 data class HomeUiState(
     val title: String = "Adveno",
-    val subtitle: String = "Welcome to Adveno",
+    val subtitle: String = "Digital Signage & Screen Management",
     val buttonText: String = "Start Connecting",
     val connectionStatus: ConnectionStatus = ConnectionStatus.Disconnected,
-    val isConnecting: Boolean = false
+    val isConnecting: Boolean = false,
+    val isReadyToPair: Boolean = false
 )
-
