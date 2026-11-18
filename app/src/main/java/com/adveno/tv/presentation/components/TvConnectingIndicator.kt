@@ -75,12 +75,8 @@ fun TvConnectingIndicator(
         label = "ConnectingRotationAngle"
     )
 
-    // Smoothly stop rotation when connected
-    val rotationAngle by animateFloatAsState(
-        targetValue = if (isConnected) 360f else continuousRotation,
-        animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
-        label = "SettledRotationAngle"
-    )
+    // Strictly clockwise rotation while connecting, settled when connected
+    val rotationAngle = if (isConnected) 0f else continuousRotation
 
     // Arc completes its circle (230 degrees -> 360 degrees full circle)
     val sweepAngle by animateFloatAsState(

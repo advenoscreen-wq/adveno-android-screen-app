@@ -12,6 +12,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.adveno.tv.core.navigation.Screen
+import com.adveno.tv.presentation.screens.ads.AdsRunningScreen
+import com.adveno.tv.presentation.screens.ads.AdsRunningViewModel
 import com.adveno.tv.presentation.screens.connect.ConnectScreen
 import com.adveno.tv.presentation.screens.connect.ConnectViewModel
 import com.adveno.tv.presentation.screens.connecting.ConnectingScreen
@@ -31,6 +33,7 @@ class MainActivity : ComponentActivity() {
     private val scanToConnectViewModel: ScanToConnectViewModel by viewModels()
     private val connectingViewModel: ConnectingViewModel by viewModels()
     private val syncingViewModel: SyncingViewModel by viewModels()
+    private val adsRunningViewModel: AdsRunningViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -92,6 +95,21 @@ class MainActivity : ComponentActivity() {
                             viewModel = syncingViewModel,
                             onBackClick = {
                                 currentScreen = Screen.Connecting
+                            },
+                            onNavigateToAdsRunning = {
+                                currentScreen = Screen.AdsRunning
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    Screen.AdsRunning -> {
+                        AdsRunningScreen(
+                            viewModel = adsRunningViewModel,
+                            onLogoutClick = {
+                                currentScreen = Screen.StartConnecting
+                            },
+                            onSyncClick = {
+                                currentScreen = Screen.Syncing
                             },
                             modifier = Modifier.fillMaxSize()
                         )

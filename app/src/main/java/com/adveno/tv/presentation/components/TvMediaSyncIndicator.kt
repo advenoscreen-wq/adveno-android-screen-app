@@ -93,12 +93,8 @@ fun TvMediaSyncIndicator(
         label = "MediaCardsFloat"
     )
 
-    // Smoothly settle and stop rotation when synced
-    val rotationAngle by animateFloatAsState(
-        targetValue = if (isSynced) 360f else continuousRotation,
-        animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
-        label = "SettledRotationAngle"
-    )
+    // Strictly clockwise rotation while syncing, settled when synced
+    val rotationAngle = if (isSynced) 0f else continuousRotation
 
     // Arc completes to full 360 degrees
     val sweepAngle by animateFloatAsState(

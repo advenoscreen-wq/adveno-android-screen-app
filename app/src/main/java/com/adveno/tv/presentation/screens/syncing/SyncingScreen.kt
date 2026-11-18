@@ -63,6 +63,7 @@ import com.adveno.tv.presentation.theme.AdvenoTheme
 fun SyncingScreen(
     viewModel: SyncingViewModel,
     onBackClick: () -> Unit,
+    onNavigateToAdsRunning: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -76,6 +77,14 @@ fun SyncingScreen(
     // Launch the 5-second deterministic progress simulation on screen start
     LaunchedEffect(Unit) {
         viewModel.startSyncSimulation()
+    }
+
+    // When synchronization succeeds, wait briefly to present the Synced state, then navigate to Ads Running
+    LaunchedEffect(uiState.isSynced) {
+        if (uiState.isSynced) {
+            kotlinx.coroutines.delay(2500L)
+            onNavigateToAdsRunning()
+        }
     }
 
     SyncingScreenContent(

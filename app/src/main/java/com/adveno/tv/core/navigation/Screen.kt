@@ -27,6 +27,10 @@ sealed interface Screen {
         override val route: String = "syncing"
     }
 
+    data object AdsRunning : Screen {
+        override val route: String = "ads_running"
+    }
+
     // Alias for backward compatibility with initial Home route
     val Home: Screen get() = StartConnecting
 }
