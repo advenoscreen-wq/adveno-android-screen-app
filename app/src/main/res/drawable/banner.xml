@@ -1,0 +1,26 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <!-- Adveno Palette Background (#101522) -->
+    <path
+        android:fillColor="#101522"
+        android:pathData="M0,0h320v180h-320z" />
+    <!-- TV Outer Frame (#3478F6 Primary) -->
+    <path
+        android:fillColor="#3478F6"
+        android:pathData="M110,45h100a12,12 0 0 1 12,12v66a12,12 0 0 1 -12,12h-100a12,12 0 0 1 -12,-12v-66a12,12 0 0 1 12,-12z" />
+    <!-- TV Screen Inner Surface (#1B2435 Surface) -->
+    <path
+        android:fillColor="#1B2435"
+        android:pathData="M118,53h84a6,6 0 0 1 6,6v50a6,6 0 0 1 -6,6h-84a6,6 0 0 1 -6,-6v-50a6,6 0 0 1 6,-6z" />
+    <!-- Cyan Broadcast/Play Signal (#22D3EE Secondary) -->
+    <path
+        android:fillColor="#22D3EE"
+        android:pathData="M152,68 L174,84 L152,100 Z" />
+    <!-- TV Stand (#A0A8B8 Secondary Text) -->
+    <path
+        android:fillColor="#A0A8B8"
+        android:pathData="M156,135h8v8h-8z M144,143h32v4h-32z" />
+</vector>
