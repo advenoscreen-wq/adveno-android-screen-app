@@ -19,6 +19,14 @@ sealed interface Screen {
         override val route: String = "scan_to_connect"
     }
 
+    data object Connecting : Screen {
+        override val route: String = "connecting"
+    }
+
+    data object Syncing : Screen {
+        override val route: String = "syncing"
+    }
+
     // Alias for backward compatibility with initial Home route
     val Home: Screen get() = StartConnecting
 }

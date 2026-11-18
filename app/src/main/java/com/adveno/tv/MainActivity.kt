@@ -14,10 +14,14 @@ import androidx.compose.ui.Modifier
 import com.adveno.tv.core.navigation.Screen
 import com.adveno.tv.presentation.screens.connect.ConnectScreen
 import com.adveno.tv.presentation.screens.connect.ConnectViewModel
+import com.adveno.tv.presentation.screens.connecting.ConnectingScreen
+import com.adveno.tv.presentation.screens.connecting.ConnectingViewModel
 import com.adveno.tv.presentation.screens.home.HomeScreen
 import com.adveno.tv.presentation.screens.home.HomeViewModel
 import com.adveno.tv.presentation.screens.scan.ScanToConnectScreen
 import com.adveno.tv.presentation.screens.scan.ScanToConnectViewModel
+import com.adveno.tv.presentation.screens.syncing.SyncingScreen
+import com.adveno.tv.presentation.screens.syncing.SyncingViewModel
 import com.adveno.tv.presentation.theme.AdvenoTheme
 
 class MainActivity : ComponentActivity() {
@@ -25,6 +29,8 @@ class MainActivity : ComponentActivity() {
     private val homeViewModel: HomeViewModel by viewModels()
     private val connectViewModel: ConnectViewModel by viewModels()
     private val scanToConnectViewModel: ScanToConnectViewModel by viewModels()
+    private val connectingViewModel: ConnectingViewModel by viewModels()
+    private val syncingViewModel: SyncingViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,6 +68,30 @@ class MainActivity : ComponentActivity() {
                             viewModel = scanToConnectViewModel,
                             onBackClick = {
                                 currentScreen = Screen.ConnectScreen
+                            },
+                            onAutoNavigateToConnecting = {
+                                currentScreen = Screen.Connecting
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    Screen.Connecting -> {
+                        ConnectingScreen(
+                            viewModel = connectingViewModel,
+                            onBackClick = {
+                                currentScreen = Screen.ScanToConnect
+                            },
+                            onNavigateToSync = {
+                                currentScreen = Screen.Syncing
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    Screen.Syncing -> {
+                        SyncingScreen(
+                            viewModel = syncingViewModel,
+                            onBackClick = {
+                                currentScreen = Screen.Connecting
                             },
                             modifier = Modifier.fillMaxSize()
                         )

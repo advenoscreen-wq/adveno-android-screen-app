@@ -55,6 +55,7 @@ import com.adveno.tv.presentation.theme.AdvenoTheme
 fun ScanToConnectScreen(
     viewModel: ScanToConnectViewModel,
     onBackClick: () -> Unit,
+    onAutoNavigateToConnecting: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -62,6 +63,13 @@ fun ScanToConnectScreen(
     // Handle Android TV remote Back button to return to Connect Your Screen
     BackHandler {
         onBackClick()
+    }
+
+    // Automatically navigate to Connecting screen after exactly 5 seconds.
+    // If user presses Back or screen leaves composition, the LaunchedEffect is automatically cancelled.
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(5000L)
+        onAutoNavigateToConnecting()
     }
 
     ScanToConnectContent(
