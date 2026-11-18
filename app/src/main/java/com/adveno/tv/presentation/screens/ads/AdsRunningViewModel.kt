@@ -21,14 +21,17 @@ class AdsRunningViewModel(
     customPlaylist: List<AdItem>? = null
 ) : ViewModel() {
 
-    private val playlist: List<AdItem> = customPlaylist ?: listOf(
+    // Defined media playlist for digital signage looping
+    val mediaPlaylist: List<AdItem> = customPlaylist ?: listOf(
         AdItem.Video(
-            id = "sample_video_ad",
+            id = "ad_item_video_1",
+            title = "Adveno Video Ad (10s)",
             durationMs = 10_000L,
             rawResId = R.raw.sample_ad_video
         ),
         AdItem.Image(
-            id = "sample_image_ad",
+            id = "ad_item_image_2",
+            title = "Adveno Display Banner (5s)",
             durationMs = 5_000L,
             drawableResId = R.drawable.sample_ad_image
         )
@@ -40,7 +43,9 @@ class AdsRunningViewModel(
 
     private val _uiState = MutableStateFlow(
         AdsRunningUiState(
-            currentItem = playlist.firstOrNull(),
+            playlist = mediaPlaylist,
+            currentIndex = 0,
+            currentItem = mediaPlaylist.firstOrNull(),
             currentProgress = 0f,
             isControlsVisible = true
         )
@@ -71,9 +76,10 @@ class AdsRunningViewModel(
      * Starts or restarts the continuous playback loop from the current item.
      */
     fun startPlayback(startTimer: Boolean = true) {
-        val currentItem = playlist.getOrNull(currentIndex) ?: return
+        val currentItem = mediaPlaylist.getOrNull(currentIndex) ?: return
         _uiState.update {
             it.copy(
+                currentIndex = currentIndex,
                 currentItem = currentItem,
                 currentProgress = 0f
             )
@@ -134,14 +140,15 @@ class AdsRunningViewModel(
      * Advances to the next item in the playlist and manages the indefinite loop.
      */
     fun advanceToNextItem(startTimer: Boolean = true) {
-        if (playlist.isEmpty()) return
+        if (mediaPlaylist.isEmpty()) return
 
         adPlaybackJob?.cancel()
-        currentIndex = (currentIndex + 1) % playlist.size
-        val nextItem = playlist[currentIndex]
+        currentIndex = (currentIndex + 1) % mediaPlaylist.size
+        val nextItem = mediaPlaylist[currentIndex]
 
         _uiState.update {
             it.copy(
+                currentIndex = currentIndex,
                 currentItem = nextItem,
                 currentProgress = 0f
             )
@@ -160,7 +167,9 @@ class AdsRunningViewModel(
         adPlaybackJob?.cancel()
         currentIndex = 0
         _uiState.value = AdsRunningUiState(
-            currentItem = playlist.firstOrNull(),
+            playlist = mediaPlaylist,
+            currentIndex = 0,
+            currentItem = mediaPlaylist.firstOrNull(),
             currentProgress = 0f,
             isControlsVisible = true
         )

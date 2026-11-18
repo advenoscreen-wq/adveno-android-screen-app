@@ -31,6 +31,9 @@ class AdsRunningUnitTest {
 
         assertNotNull(state.currentItem)
         assertTrue(state.currentItem is AdItem.Video)
+        assertEquals(MediaType.VIDEO, state.currentItem?.type)
+        assertEquals(2, state.totalItems)
+        assertTrue(state.isVideoPlaying)
         assertEquals(10_000L, state.currentItem?.durationMs)
         assertEquals(0f, state.currentProgress, 0.001f)
         assertTrue(state.isControlsVisible)

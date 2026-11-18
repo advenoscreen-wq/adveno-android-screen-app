@@ -1,5 +1,6 @@
 package com.adveno.tv.presentation.screens.ads
 
+import android.net.Uri
 import android.view.LayoutInflater
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
@@ -44,7 +45,6 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.RawResourceDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.adveno.tv.R
@@ -78,7 +78,7 @@ fun AdsRunningScreen(
         onLogoutClick()
     }
 
-    // Start initial 3-second auto-hide timer and playback loop when screen opens
+    // Start initial 3-second auto-hide timer and playlist playback loop when screen opens
     LaunchedEffect(Unit) {
         viewModel.startInactivityTimer()
         viewModel.startPlayback()
@@ -87,7 +87,6 @@ fun AdsRunningScreen(
     AdsRunningScreenContent(
         uiState = uiState,
         onUserInteraction = { viewModel.onUserInteraction() },
-        onVideoProgress = { pos, dur -> viewModel.updateVideoProgress(pos, dur) },
         onVideoCompleted = { viewModel.onVideoCompleted() },
         onVideoError = { viewModel.onVideoError() },
         onLogoutClick = {
@@ -109,7 +108,6 @@ fun AdsRunningScreen(
 fun AdsRunningScreenContent(
     uiState: AdsRunningUiState,
     onUserInteraction: () -> Unit,
-    onVideoProgress: (positionMs: Long, durationMs: Long) -> Unit,
     onVideoCompleted: () -> Unit,
     onVideoError: () -> Unit,
     onLogoutClick: () -> Unit,
@@ -126,20 +124,12 @@ fun AdsRunningScreenContent(
         }
     }
 
-    // Prepare local MP4 video media item with 10s clipping using canonical raw resource URI
-    @Suppress("DEPRECATION")
+    // Prepare local MP4 video media item from raw resources
     val rawUri = remember {
-        RawResourceDataSource.buildRawResourceUri(R.raw.sample_ad_video)
+        Uri.parse("rawresource:///${R.raw.sample_ad_video}")
     }
     val mediaItem = remember(rawUri) {
-        MediaItem.Builder()
-            .setUri(rawUri)
-            .setClippingConfiguration(
-                MediaItem.ClippingConfiguration.Builder()
-                    .setEndPositionMs(10_000L)
-                    .build()
-            )
-            .build()
+        MediaItem.fromUri(rawUri)
     }
 
     // Attach ExoPlayer listener and ensure safe release on disposal
@@ -169,19 +159,6 @@ fun AdsRunningScreenContent(
             exoPlayer.prepare()
             exoPlayer.seekTo(0L)
             exoPlayer.play()
-
-            // Fine-tune progress bar from player position while video plays
-            while (true) {
-                delay(50L)
-                val pos = exoPlayer.currentPosition
-                val dur = exoPlayer.duration
-                if (dur > 0L) {
-                    onVideoProgress(pos, dur)
-                }
-                if (exoPlayer.playbackState == Player.STATE_ENDED || (dur > 0L && pos >= dur)) {
-                    break
-                }
-            }
         } else {
             exoPlayer.pause()
         }
@@ -191,12 +168,12 @@ fun AdsRunningScreenContent(
     val isVideo = uiState.currentItem is AdItem.Video
     val videoAlpha by animateFloatAsState(
         targetValue = if (isVideo) 1f else 0f,
-        animationSpec = tween(durationMillis = 400),
+        animationSpec = tween(durationMillis = 300),
         label = "VideoCrossfade"
     )
     val imageAlpha by animateFloatAsState(
         targetValue = if (!isVideo) 1f else 0f,
-        animationSpec = tween(durationMillis = 400),
+        animationSpec = tween(durationMillis = 300),
         label = "ImageCrossfade"
     )
 
@@ -227,30 +204,39 @@ fun AdsRunningScreenContent(
             contentAlignment = Alignment.Center
         ) {
             // Video Layer (AndroidX Media3 ExoPlayer with TextureView layout)
-            AndroidView(
-                factory = { ctx ->
-                    val view = LayoutInflater.from(ctx).inflate(
-                        R.layout.view_signage_player,
-                        null,
-                        false
-                    ) as PlayerView
-                    view.player = exoPlayer
-                    view
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = videoAlpha }
-            )
+            if (videoAlpha > 0.01f) {
+                AndroidView(
+                    factory = { ctx ->
+                        val view = LayoutInflater.from(ctx).inflate(
+                            R.layout.view_signage_player,
+                            null,
+                            false
+                        ) as PlayerView
+                        view.player = exoPlayer
+                        view
+                    },
+                    update = { view ->
+                        if (view.player != exoPlayer) {
+                            view.player = exoPlayer
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = videoAlpha }
+                )
+            }
 
             // Image Layer (Jetpack Compose Image)
-            Image(
-                painter = painterResource(id = R.drawable.sample_ad_image),
-                contentDescription = "Signage Advertisement",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = imageAlpha }
-            )
+            if (imageAlpha > 0.01f) {
+                Image(
+                    painter = painterResource(id = R.drawable.sample_ad_image),
+                    contentDescription = "Signage Advertisement",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = imageAlpha }
+                )
+            }
         }
 
         // -------------------------------------------------------------
