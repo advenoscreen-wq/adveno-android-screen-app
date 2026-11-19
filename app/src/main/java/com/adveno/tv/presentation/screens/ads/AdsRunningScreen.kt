@@ -1,5 +1,6 @@
 package com.adveno.tv.presentation.screens.ads
 
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.view.LayoutInflater
 import androidx.activity.compose.BackHandler
@@ -39,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
@@ -49,6 +51,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -61,6 +66,7 @@ import com.adveno.tv.presentation.components.TvSignageControlPill
 import com.adveno.tv.presentation.theme.AdvenoBackground
 import com.adveno.tv.presentation.theme.AdvenoDimensions
 import kotlinx.coroutines.delay
+import java.io.File
 
 /**
  * Stateful entry point for the "MAIN SCREEN: Ads Running".
@@ -126,20 +132,13 @@ fun AdsRunningScreenContent(
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
             playWhenReady = true
-            repeatMode = Player.REPEAT_MODE_OFF
+            repeatMode = Player.REPEAT_MODE_ONE // Loop video if natural duration is shorter than configured playlist duration
         }
     }
 
-    // Prepare local MP4 video media item from raw resources
-    val rawUri = remember {
-        Uri.parse("rawresource:///${R.raw.sample_ad_video}")
-    }
-    val mediaItem = remember(rawUri) {
-        MediaItem.fromUri(rawUri)
-    }
-
-    // Attach ExoPlayer listener and ensure safe release on disposal
-    DisposableEffect(exoPlayer) {
+    // Attach ExoPlayer listener and lifecycle observer with safe release on disposal
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, exoPlayer) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) {
@@ -152,19 +151,52 @@ fun AdsRunningScreenContent(
             }
         }
         exoPlayer.addListener(listener)
+
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    exoPlayer.pause()
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    if (uiState.currentItem is AdItem.Video) {
+                        exoPlayer.play()
+                    }
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
             exoPlayer.removeListener(listener)
             exoPlayer.release()
         }
     }
 
-    // React to active playlist item: prepare/play video or pause
+    // React to active playlist item: prepare/play video from local file or raw resource, or pause
     LaunchedEffect(uiState.currentItem) {
-        if (uiState.currentItem is AdItem.Video) {
-            exoPlayer.setMediaItem(mediaItem)
-            exoPlayer.prepare()
-            exoPlayer.seekTo(0L)
-            exoPlayer.play()
+        val item = uiState.currentItem
+        if (item is AdItem.Video) {
+            val uri = when {
+                !item.filePath.isNullOrBlank() -> Uri.fromFile(File(item.filePath))
+                item.rawResId != null -> Uri.parse("rawresource:///${item.rawResId}")
+                else -> null
+            }
+
+            if (uri != null) {
+                try {
+                    val mediaItem = MediaItem.fromUri(uri)
+                    exoPlayer.setMediaItem(mediaItem)
+                    exoPlayer.prepare()
+                    exoPlayer.seekTo(0L)
+                    exoPlayer.play()
+                } catch (e: Exception) {
+                    onVideoError()
+                }
+            } else {
+                onVideoError()
+            }
         } else {
             exoPlayer.pause()
         }
@@ -232,16 +264,42 @@ fun AdsRunningScreenContent(
                 )
             }
 
-            // Image Layer (Jetpack Compose Image)
+            // Image Layer (Jetpack Compose Image from local file or embedded drawable)
             if (imageAlpha > 0.01f) {
-                Image(
-                    painter = painterResource(id = R.drawable.sample_ad_image),
-                    contentDescription = "Signage Advertisement",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = imageAlpha }
-                )
+                val currentImage = uiState.currentItem as? AdItem.Image
+                val localBitmap = remember(currentImage?.filePath) {
+                    currentImage?.filePath?.let { path ->
+                        try {
+                            val file = File(path)
+                            if (file.exists() && file.canRead()) {
+                                BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
+                            } else null
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                }
+
+                if (localBitmap != null) {
+                    Image(
+                        bitmap = localBitmap,
+                        contentDescription = currentImage?.title ?: "Signage Advertisement",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = imageAlpha }
+                    )
+                } else {
+                    val fallbackRes = currentImage?.drawableResId ?: R.drawable.sample_ad_image
+                    Image(
+                        painter = painterResource(id = fallbackRes),
+                        contentDescription = currentImage?.title ?: "Signage Advertisement",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = imageAlpha }
+                    )
+                }
             }
         }
 

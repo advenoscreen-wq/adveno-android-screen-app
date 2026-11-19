@@ -23,10 +23,13 @@ import java.io.File
 
 /**
  * ViewModel responsible for the digital signage advertisement player:
- * - Manages playlist loop: Video (10s) -> Image (5s) -> Video (10s) -> Image (5s) indefinitely.
- * - Synchronizes current ad progress (0% to 100%) for both video and image items.
- * - Handles auto-hide overlay controls after 3 seconds of user inactivity.
- * - Manages clean device logout (POST /api/v1/screens/logout) and local media/credential eviction.
+ * - Automatically loads and plays verified local media from ActivePlaylistStorage.
+ * - Manages continuous playlist looping in ascending position order.
+ * - Handles both Video and Image items with respective durations.
+ * - Seamlessly adapts when new playlists are synchronized.
+ * - Falls back to default dummy playback if no backend playlist is active.
+ * - Auto-hides overlay controls after 3 seconds of user inactivity.
+ * - Safe device logout with local media eviction.
  */
 class AdsRunningViewModel(
     private val logoutScreenUseCase: LogoutScreenUseCase? = null,
@@ -37,6 +40,27 @@ class AdsRunningViewModel(
     customPlaylist: List<AdItem>? = null
 ) : ViewModel() {
 
+    // Default dummy playlist fallback when no usable backend playlist is available
+    val dummyFallbackPlaylist: List<AdItem> = listOf(
+        AdItem.Video(
+            id = "dummy_ad_video_1",
+            title = "Adveno Video Ad (10s)",
+            durationMs = 10_000L,
+            rawResId = R.raw.sample_ad_video
+        ),
+        AdItem.Image(
+            id = "dummy_ad_image_2",
+            title = "Adveno Display Banner (5s)",
+            durationMs = 5_000L,
+            drawableResId = R.drawable.sample_ad_image
+        )
+    )
+
+    private val isCustomPlaylistMode = customPlaylist != null
+
+    private var activeMediaList: List<AdItem> = customPlaylist ?: resolveInitialPlaylist()
+    val mediaPlaylist: List<AdItem> get() = activeMediaList
+
     /**
      * Shared in-memory active playlist prepared and applied by the synchronization engine.
      */
@@ -44,36 +68,116 @@ class AdsRunningViewModel(
 
     fun getActivePlaylist(): Playlist? = activePlaylistStorage?.getPlaylist()
 
-    // Defined media playlist for digital signage looping
-    val mediaPlaylist: List<AdItem> = customPlaylist ?: listOf(
-        AdItem.Video(
-            id = "ad_item_video_1",
-            title = "Adveno Video Ad (10s)",
-            durationMs = 10_000L,
-            rawResId = R.raw.sample_ad_video
-        ),
-        AdItem.Image(
-            id = "ad_item_image_2",
-            title = "Adveno Display Banner (5s)",
-            durationMs = 5_000L,
-            drawableResId = R.drawable.sample_ad_image
-        )
-    )
-
     private var currentIndex = 0
     private var inactivityJob: Job? = null
     private var adPlaybackJob: Job? = null
 
     private val _uiState = MutableStateFlow(
         AdsRunningUiState(
-            playlist = mediaPlaylist,
+            playlist = activeMediaList,
             currentIndex = 0,
-            currentItem = mediaPlaylist.firstOrNull(),
+            currentItem = activeMediaList.firstOrNull(),
             currentProgress = 0f,
             isControlsVisible = true
         )
     )
     val uiState: StateFlow<AdsRunningUiState> = _uiState.asStateFlow()
+
+    init {
+        if (!isCustomPlaylistMode) {
+            observeActivePlaylistStorage()
+        }
+    }
+
+    private fun resolveInitialPlaylist(): List<AdItem> {
+        val initialPlaylist = activePlaylistStorage?.getPlaylist()
+        val mapped = mapPlaylistToAdItems(initialPlaylist)
+        return if (mapped.isNotEmpty()) mapped else dummyFallbackPlaylist
+    }
+
+    /**
+     * Observes ActivePlaylistStorage for updates (e.g. after a manual or automatic Sync).
+     * Automatically applies new playlists without restarting the application.
+     */
+    private fun observeActivePlaylistStorage() {
+        viewModelScope.launch {
+            activePlaylistStorage?.currentPlaylist?.collect { playlist ->
+                val mapped = mapPlaylistToAdItems(playlist)
+                val targetList = if (mapped.isNotEmpty()) mapped else dummyFallbackPlaylist
+
+                if (activeMediaList != targetList) {
+                    Log.d(TAG, "New playlist detected (${targetList.size} items). Switching playback.")
+                    activeMediaList = targetList
+                    currentIndex = 0
+                    adPlaybackJob?.cancel()
+                    _uiState.update {
+                        it.copy(
+                            playlist = activeMediaList,
+                            currentIndex = 0,
+                            currentItem = activeMediaList.firstOrNull(),
+                            currentProgress = 0f
+                        )
+                    }
+                    startPlayback()
+                }
+            }
+        }
+    }
+
+    /**
+     * Maps the backend Playlist domain model to executable local AdItems.
+     * Verifies that local media files exist and are readable before inclusion.
+     */
+    private fun mapPlaylistToAdItems(playlist: Playlist?): List<AdItem> {
+        if (playlist == null || playlist.items.isEmpty()) return emptyList()
+
+        val validItems = mutableListOf<AdItem>()
+        val sortedItems = playlist.items.sortedBy { it.position }
+
+        for (item in sortedItems) {
+            val filePath = item.media.localFilePath
+            if (filePath.isNullOrBlank()) {
+                Log.w(TAG, "Item ${item.id} skipped: missing localFilePath")
+                continue
+            }
+
+            val file = File(filePath)
+            if (!file.exists() || !file.canRead() || file.length() == 0L) {
+                Log.w(TAG, "Item ${item.id} skipped: file missing or empty at $filePath")
+                continue
+            }
+
+            // Duration: configured durationSeconds on the playlist item preferred
+            val durationSec = item.durationSeconds ?: item.media.durationSeconds ?: 10
+            val durationMs = (durationSec * 1000L).coerceAtLeast(1000L)
+
+            when (item.media.mediaType) {
+                com.adveno.tv.domain.model.media.MediaType.VIDEO -> {
+                    validItems.add(
+                        AdItem.Video(
+                            id = item.id,
+                            title = item.media.name.ifBlank { "Video Ad" },
+                            durationMs = durationMs,
+                            filePath = file.absolutePath
+                        )
+                    )
+                }
+                com.adveno.tv.domain.model.media.MediaType.IMAGE -> {
+                    val imageDurationSec = item.durationSeconds ?: item.media.durationSeconds ?: 5
+                    validItems.add(
+                        AdItem.Image(
+                            id = item.id,
+                            title = item.media.name.ifBlank { "Banner Ad" },
+                            durationMs = (imageDurationSec * 1000L).coerceAtLeast(1000L),
+                            filePath = file.absolutePath
+                        )
+                    )
+                }
+            }
+        }
+
+        return validItems
+    }
 
     /**
      * Resets and starts the 3-second auto-hide timer for overlay controls.
@@ -99,7 +203,14 @@ class AdsRunningViewModel(
      * Starts or restarts the continuous playback loop from the current item.
      */
     fun startPlayback(startTimer: Boolean = true) {
-        val currentItem = mediaPlaylist.getOrNull(currentIndex) ?: return
+        if (activeMediaList.isEmpty()) {
+            activeMediaList = dummyFallbackPlaylist
+        }
+
+        val currentItem = activeMediaList.getOrNull(currentIndex)
+            ?: activeMediaList.firstOrNull()
+            ?: return
+
         _uiState.update {
             it.copy(
                 currentIndex = currentIndex,
@@ -107,16 +218,20 @@ class AdsRunningViewModel(
                 currentProgress = 0f
             )
         }
+
         if (startTimer) {
             scheduleCurrentAdTimer(currentItem)
         }
     }
 
     /**
-     * Internal coroutine timer driving the current item duration (10s video / 5s image).
+     * Internal coroutine timer driving the current item duration.
+     * Prevents race conditions by capturing expectedIndex.
      */
     private fun scheduleCurrentAdTimer(item: AdItem) {
         adPlaybackJob?.cancel()
+        val expectedIndex = currentIndex
+
         adPlaybackJob = viewModelScope.launch {
             val totalDuration = if (item.durationMs > 0L) item.durationMs else 10_000L
             val stepInterval = 50L
@@ -124,17 +239,20 @@ class AdsRunningViewModel(
 
             for (step in 1..totalSteps) {
                 delay(stepInterval)
+                if (currentIndex != expectedIndex) return@launch
                 val progress = (step.toFloat() / totalSteps).coerceIn(0f, 1f)
                 _uiState.update { it.copy(currentProgress = progress) }
             }
 
             // Duration completed -> loop to the next item
-            advanceToNextItem(startTimer = true)
+            if (currentIndex == expectedIndex) {
+                advanceToNextItem(startTimer = true)
+            }
         }
     }
 
     /**
-     * Fine-tunes the playback progress if accurate position is provided by the media player.
+     * Fine-tunes playback progress if accurate position is provided by the media player.
      */
     fun updateVideoProgress(positionMs: Long, durationMs: Long) {
         if (_uiState.value.currentItem !is AdItem.Video) return
@@ -144,7 +262,7 @@ class AdsRunningViewModel(
     }
 
     /**
-     * Called when the video ad reaches its end.
+     * Called when the video ad reaches its natural completion.
      */
     fun onVideoCompleted(startTimer: Boolean = true) {
         if (_uiState.value.currentItem is AdItem.Video) {
@@ -153,9 +271,10 @@ class AdsRunningViewModel(
     }
 
     /**
-     * Called when video playback encounters an issue or error, safely falling back to the next item.
+     * Called when video playback encounters an error, safely falling back to the next item.
      */
     fun onVideoError(startTimer: Boolean = true) {
+        Log.w(TAG, "Video error encountered at index $currentIndex. Advancing.")
         advanceToNextItem(startTimer = startTimer)
     }
 
@@ -163,11 +282,11 @@ class AdsRunningViewModel(
      * Advances to the next item in the playlist and manages the indefinite loop.
      */
     fun advanceToNextItem(startTimer: Boolean = true) {
-        if (mediaPlaylist.isEmpty()) return
+        if (activeMediaList.isEmpty()) return
 
         adPlaybackJob?.cancel()
-        currentIndex = (currentIndex + 1) % mediaPlaylist.size
-        val nextItem = mediaPlaylist[currentIndex]
+        currentIndex = (currentIndex + 1) % activeMediaList.size
+        val nextItem = activeMediaList[currentIndex]
 
         _uiState.update {
             it.copy(
@@ -189,7 +308,7 @@ class AdsRunningViewModel(
     fun logout(onSuccess: () -> Unit) {
         if (_uiState.value.isLoggingOut) return
 
-        Log.d("AdsRunningVM", "Logout triggered. Starting logout workflow...")
+        Log.d(TAG, "Logout triggered. Starting logout workflow...")
         _uiState.update {
             it.copy(
                 isLoggingOut = true,
@@ -203,7 +322,7 @@ class AdsRunningViewModel(
                 logoutScreenUseCase.invoke().collect { result ->
                     when (result) {
                         is NetworkResult.Success -> {
-                            Log.d("AdsRunningVM", "Backend logout succeeded. Evicting local credentials and media.")
+                            Log.d(TAG, "Backend logout succeeded. Evicting local credentials and media.")
                             clearAllLocalData()
                             _uiState.update { it.copy(isLoggingOut = false) }
                             reset()
@@ -213,7 +332,7 @@ class AdsRunningViewModel(
                             when (val err = result.error) {
                                 is NetworkError.DeviceRevoked -> {
                                     // Device already revoked or disconnected on backend; wipe local state and exit
-                                    Log.d("AdsRunningVM", "Device was already revoked (${err.errorCode}). Wiping local data.")
+                                    Log.d(TAG, "Device was already revoked (${err.errorCode}). Wiping local data.")
                                     clearAllLocalData()
                                     _uiState.update { it.copy(isLoggingOut = false) }
                                     reset()
@@ -221,7 +340,7 @@ class AdsRunningViewModel(
                                 }
                                 is NetworkError.NetworkFailure -> {
                                     val errorMsg = "Unable to logout. Please check your internet connection and try again."
-                                    Log.w("AdsRunningVM", errorMsg)
+                                    Log.w(TAG, errorMsg)
                                     _uiState.update {
                                         it.copy(
                                             isLoggingOut = false,
@@ -235,7 +354,7 @@ class AdsRunningViewModel(
                                 else -> {
                                     val errorMsg = err.message.takeIf { it.isNotBlank() }
                                         ?: "Logout failed due to a server error. Please try again."
-                                    Log.e("AdsRunningVM", "Logout error: $errorMsg")
+                                    Log.e(TAG, "Logout error: $errorMsg")
                                     _uiState.update {
                                         it.copy(
                                             isLoggingOut = false,
@@ -295,9 +414,9 @@ class AdsRunningViewModel(
                     adsCacheDir.deleteRecursively()
                 }
             }
-            Log.d("AdsRunningVM", "All local credentials, session tokens, and cached media cleared successfully.")
+            Log.d(TAG, "All local credentials, session tokens, and cached media cleared successfully.")
         } catch (e: Exception) {
-            Log.w("AdsRunningVM", "Error clearing local media or credential storage", e)
+            Log.w(TAG, "Error clearing local media or credential storage", e)
         }
     }
 
@@ -309,9 +428,9 @@ class AdsRunningViewModel(
         adPlaybackJob?.cancel()
         currentIndex = 0
         _uiState.value = AdsRunningUiState(
-            playlist = mediaPlaylist,
+            playlist = activeMediaList,
             currentIndex = 0,
-            currentItem = mediaPlaylist.firstOrNull(),
+            currentItem = activeMediaList.firstOrNull(),
             currentProgress = 0f,
             isControlsVisible = true
         )
@@ -321,5 +440,9 @@ class AdsRunningViewModel(
         super.onCleared()
         inactivityJob?.cancel()
         adPlaybackJob?.cancel()
+    }
+
+    companion object {
+        private const val TAG = "AdsRunningVM"
     }
 }
