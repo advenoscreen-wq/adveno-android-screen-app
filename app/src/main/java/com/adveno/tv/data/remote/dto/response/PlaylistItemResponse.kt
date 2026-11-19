@@ -12,12 +12,14 @@ data class PlaylistItemResponse(
     val id: String,
 
     @SerialName("position")
-    val position: Int,
+    val position: Int = 0,
 
     @SerialName("duration_seconds")
     val durationSeconds: Int? = null,
 
+    @SerialName("duration")
+    val duration: Int? = null,
+
     @SerialName("media")
     val media: MediaResponse
 )
-

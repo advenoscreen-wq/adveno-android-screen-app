@@ -12,22 +12,22 @@ data class MediaResponse(
     val id: String,
 
     @SerialName("name")
-    val name: String,
+    val name: String = "",
 
     @SerialName("media_type")
-    val mediaType: String,
+    val mediaType: String = "IMAGE",
 
     @SerialName("mime_type")
-    val mimeType: String,
+    val mimeType: String = "",
 
     @SerialName("storage_path")
-    val storagePath: String,
+    val storagePath: String = "",
 
     @SerialName("file_size")
-    val fileSize: Long,
+    val fileSize: Long = 0L,
 
     @SerialName("checksum")
-    val checksum: String,
+    val checksum: String = "",
 
     @SerialName("width")
     val width: Int? = null,
@@ -38,10 +38,12 @@ data class MediaResponse(
     @SerialName("duration_seconds")
     val durationSeconds: Int? = null,
 
+    @SerialName("duration")
+    val duration: Int? = null,
+
     @SerialName("status")
-    val status: String,
+    val status: String = "ACTIVE",
 
     @SerialName("media_url")
     val mediaUrl: String
 )
-

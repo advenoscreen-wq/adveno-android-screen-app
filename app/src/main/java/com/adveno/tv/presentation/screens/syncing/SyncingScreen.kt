@@ -47,6 +47,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.adveno.tv.R
+import com.adveno.tv.presentation.components.TvButton
 import com.adveno.tv.presentation.components.TvMediaSyncIndicator
 import com.adveno.tv.presentation.components.TvProgressBar
 import com.adveno.tv.presentation.theme.AdvenoBackground
@@ -64,6 +65,7 @@ fun SyncingScreen(
     viewModel: SyncingViewModel,
     onBackClick: () -> Unit,
     onNavigateToAdsRunning: () -> Unit = {},
+    onNavigateToStartConnecting: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -74,21 +76,29 @@ fun SyncingScreen(
         onBackClick()
     }
 
-    // Launch the 5-second deterministic progress simulation on screen start
+    // Launch real backend synchronization workflow on screen start
     LaunchedEffect(Unit) {
-        viewModel.startSyncSimulation()
+        viewModel.startSynchronization()
+    }
+
+    // Navigate to Start Connecting if device credential was revoked or disconnected
+    LaunchedEffect(uiState.isRevoked) {
+        if (uiState.isRevoked) {
+            onNavigateToStartConnecting()
+        }
     }
 
     // When synchronization succeeds, wait briefly to present the Synced state, then navigate to Ads Running
     LaunchedEffect(uiState.isSynced) {
         if (uiState.isSynced) {
-            kotlinx.coroutines.delay(2500L)
+            kotlinx.coroutines.delay(2000L)
             onNavigateToAdsRunning()
         }
     }
 
     SyncingScreenContent(
         uiState = uiState,
+        onRetryClick = { viewModel.retry() },
         modifier = modifier
     )
 }
@@ -104,6 +114,7 @@ fun SyncingScreen(
 @Composable
 fun SyncingScreenContent(
     uiState: SyncingUiState,
+    onRetryClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val entranceAlpha = remember { Animatable(0f) }
@@ -282,6 +293,16 @@ fun SyncingScreenContent(
                         color = if (uiState.isSynced) AdvenoSuccess else AdvenoTextPrimary,
                         fontSize = 17.sp,
                         modifier = Modifier.widthIn(min = 44.dp)
+                    )
+                }
+
+                // Actionable TV D-pad focusable Retry button on failure
+                if (uiState.canRetry) {
+                    Spacer(modifier = Modifier.height(28.dp))
+                    TvButton(
+                        text = "Retry",
+                        onClick = onRetryClick,
+                        modifier = Modifier.widthIn(min = 180.dp)
                     )
                 }
             }

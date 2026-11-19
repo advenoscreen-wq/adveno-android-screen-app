@@ -9,12 +9,12 @@ data class Media(
     val mediaType: MediaType,
     val mimeType: String,
     val storagePath: String,
-    val fileSize: Long,
-    val checksum: String,
+    val fileSize: Long = 0L,
+    val checksum: String = "",
     val width: Int? = null,
     val height: Int? = null,
     val durationSeconds: Int? = null,
     val status: MediaStatus = MediaStatus.ACTIVE,
-    val mediaUrl: String
+    val mediaUrl: String,
+    val localFilePath: String? = null
 )
-

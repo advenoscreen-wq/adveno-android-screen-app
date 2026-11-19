@@ -9,7 +9,8 @@ object SyncMapper {
 
     fun toDomain(response: ScreenSyncCheckResponse): ScreenSyncCheck {
         return ScreenSyncCheck(
-            needSync = response.needSync
+            needSync = response.needSync,
+            desiredRevision = response.desiredRevision
         )
     }
 
@@ -26,4 +27,3 @@ object SyncMapper {
         )
     }
 }
-

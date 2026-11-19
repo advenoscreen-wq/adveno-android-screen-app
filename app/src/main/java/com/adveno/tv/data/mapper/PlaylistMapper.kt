@@ -26,10 +26,12 @@ object PlaylistMapper {
     }
 
     fun toDomain(dto: PlaylistItemResponse): PlaylistItem {
+        val duration = dto.durationSeconds ?: dto.duration ?: dto.media.durationSeconds ?: dto.media.duration
+
         return PlaylistItem(
             id = dto.id,
             position = dto.position,
-            durationSeconds = dto.durationSeconds,
+            durationSeconds = duration,
             media = toDomain(dto.media)
         )
     }
@@ -45,6 +47,8 @@ object PlaylistMapper {
             else -> MediaStatus.ACTIVE
         }
 
+        val duration = dto.durationSeconds ?: dto.duration
+
         return Media(
             id = dto.id,
             name = dto.name,
@@ -55,10 +59,10 @@ object PlaylistMapper {
             checksum = dto.checksum,
             width = dto.width,
             height = dto.height,
-            durationSeconds = dto.durationSeconds,
+            durationSeconds = duration,
             status = status,
-            mediaUrl = dto.mediaUrl
+            mediaUrl = dto.mediaUrl,
+            localFilePath = null
         )
     }
 }
-

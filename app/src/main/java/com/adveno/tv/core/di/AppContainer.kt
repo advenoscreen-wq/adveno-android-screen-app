@@ -1,12 +1,14 @@
 package com.adveno.tv.core.di
 
 import android.content.Context
+import com.adveno.tv.core.storage.ActivePlaylistStorage
 import com.adveno.tv.core.storage.PairingSessionStorage
 import com.adveno.tv.core.storage.ScreenCredentialStorage
 import com.adveno.tv.data.remote.api.PairingApiService
 import com.adveno.tv.data.remote.api.ScreenApiService
 import com.adveno.tv.data.remote.datasource.PairingRemoteDataSource
 import com.adveno.tv.data.remote.datasource.ScreenRemoteDataSource
+import com.adveno.tv.data.remote.downloader.MediaDownloader
 import com.adveno.tv.domain.repository.PairingRepository
 import com.adveno.tv.domain.repository.PlaylistRepository
 import com.adveno.tv.domain.repository.ScreenRepository
@@ -38,6 +40,10 @@ class AppContainer(val context: Context) {
         StorageModule.providePairingSessionStorage()
     }
 
+    val activePlaylistStorage: ActivePlaylistStorage by lazy {
+        StorageModule.provideActivePlaylistStorage()
+    }
+
     // Network
     val okHttpClient: OkHttpClient by lazy {
         NetworkModule.provideOkHttpClient(credentialStorage, sessionStorage)
@@ -62,6 +68,10 @@ class AppContainer(val context: Context) {
 
     val screenRemoteDataSource: ScreenRemoteDataSource by lazy {
         DataModule.provideScreenRemoteDataSource(screenApiService)
+    }
+
+    val mediaDownloader: MediaDownloader by lazy {
+        DataModule.provideMediaDownloader(okHttpClient, context)
     }
 
     // Repositories

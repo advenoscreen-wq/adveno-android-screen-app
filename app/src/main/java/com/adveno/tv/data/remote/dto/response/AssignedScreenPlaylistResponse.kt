@@ -19,9 +19,8 @@ data class AssignedScreenPlaylistResponse(
     val description: String? = null,
 
     @SerialName("version")
-    val version: Int,
+    val version: Int = 0,
 
     @SerialName("items")
     val items: List<PlaylistItemResponse> = emptyList()
 )
-

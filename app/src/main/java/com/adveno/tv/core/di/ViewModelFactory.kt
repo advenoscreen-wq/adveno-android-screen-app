@@ -44,14 +44,22 @@ class ViewModelFactory(
                 ) as T
             }
             modelClass.isAssignableFrom(SyncingViewModel::class.java) -> {
-                SyncingViewModel() as T
+                SyncingViewModel(
+                    checkSyncStatusUseCase = appContainer.checkSyncStatusUseCase,
+                    getAssignedPlaylistUseCase = appContainer.getAssignedPlaylistUseCase,
+                    acknowledgeSyncUseCase = appContainer.acknowledgeSyncUseCase,
+                    mediaDownloader = appContainer.mediaDownloader,
+                    activePlaylistStorage = appContainer.activePlaylistStorage,
+                    credentialStorage = appContainer.credentialStorage
+                ) as T
             }
             modelClass.isAssignableFrom(AdsRunningViewModel::class.java) -> {
                 AdsRunningViewModel(
                     logoutScreenUseCase = appContainer.logoutScreenUseCase,
                     credentialStorage = appContainer.credentialStorage,
                     sessionStorage = appContainer.sessionStorage,
-                    context = appContainer.context
+                    context = appContainer.context,
+                    activePlaylistStorage = appContainer.activePlaylistStorage
                 ) as T
             }
             else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

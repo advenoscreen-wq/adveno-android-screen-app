@@ -1,5 +1,6 @@
 package com.adveno.tv.core.di
 
+import android.content.Context
 import com.adveno.tv.core.storage.PairingSessionStorage
 import com.adveno.tv.core.storage.ScreenCredentialStorage
 import com.adveno.tv.data.remote.api.PairingApiService
@@ -8,6 +9,8 @@ import com.adveno.tv.data.remote.datasource.PairingRemoteDataSource
 import com.adveno.tv.data.remote.datasource.PairingRemoteDataSourceImpl
 import com.adveno.tv.data.remote.datasource.ScreenRemoteDataSource
 import com.adveno.tv.data.remote.datasource.ScreenRemoteDataSourceImpl
+import com.adveno.tv.data.remote.downloader.MediaDownloader
+import com.adveno.tv.data.remote.downloader.MediaDownloaderImpl
 import com.adveno.tv.data.repository.PairingRepositoryImpl
 import com.adveno.tv.data.repository.PlaylistRepositoryImpl
 import com.adveno.tv.data.repository.ScreenRepositoryImpl
@@ -16,6 +19,7 @@ import com.adveno.tv.domain.repository.PairingRepository
 import com.adveno.tv.domain.repository.PlaylistRepository
 import com.adveno.tv.domain.repository.ScreenRepository
 import com.adveno.tv.domain.repository.SyncRepository
+import okhttp3.OkHttpClient
 
 object DataModule {
 
@@ -62,6 +66,16 @@ object DataModule {
     ): SyncRepository {
         return SyncRepositoryImpl(
             remoteDataSource = remoteDataSource
+        )
+    }
+
+    fun provideMediaDownloader(
+        okHttpClient: OkHttpClient,
+        context: Context
+    ): MediaDownloader {
+        return MediaDownloaderImpl(
+            okHttpClient = okHttpClient,
+            context = context
         )
     }
 }

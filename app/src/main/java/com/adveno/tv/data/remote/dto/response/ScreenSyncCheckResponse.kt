@@ -9,6 +9,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ScreenSyncCheckResponse(
     @SerialName("need_sync")
-    val needSync: Boolean
-)
+    val needSync: Boolean,
 
+    @SerialName("desired_revision")
+    val desiredRevision: Int? = null
+)

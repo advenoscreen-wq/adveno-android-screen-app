@@ -1,6 +1,7 @@
 package com.adveno.tv.core.di
 
 import android.content.Context
+import com.adveno.tv.core.storage.ActivePlaylistStorage
 import com.adveno.tv.core.storage.PairingSessionStorage
 import com.adveno.tv.core.storage.ScreenCredentialStorage
 import com.adveno.tv.core.storage.SecureScreenCredentialStorage
@@ -14,5 +15,8 @@ object StorageModule {
     fun providePairingSessionStorage(): PairingSessionStorage {
         return PairingSessionStorage()
     }
-}
 
+    fun provideActivePlaylistStorage(): ActivePlaylistStorage {
+        return ActivePlaylistStorage()
+    }
+}

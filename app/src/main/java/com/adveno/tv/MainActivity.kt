@@ -107,6 +107,9 @@ class MainActivity : ComponentActivity() {
                             onNavigateToAdsRunning = {
                                 currentScreen = Screen.AdsRunning
                             },
+                            onNavigateToStartConnecting = {
+                                currentScreen = Screen.StartConnecting
+                            },
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -117,6 +120,7 @@ class MainActivity : ComponentActivity() {
                                 currentScreen = Screen.StartConnecting
                             },
                             onSyncClick = {
+                                syncingViewModel.reset()
                                 currentScreen = Screen.Syncing
                             },
                             modifier = Modifier.fillMaxSize()

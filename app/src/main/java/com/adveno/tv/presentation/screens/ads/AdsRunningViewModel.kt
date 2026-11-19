@@ -7,8 +7,10 @@ import androidx.lifecycle.viewModelScope
 import com.adveno.tv.R
 import com.adveno.tv.core.network.NetworkError
 import com.adveno.tv.core.network.NetworkResult
+import com.adveno.tv.core.storage.ActivePlaylistStorage
 import com.adveno.tv.core.storage.PairingSessionStorage
 import com.adveno.tv.core.storage.ScreenCredentialStorage
+import com.adveno.tv.domain.model.playlist.Playlist
 import com.adveno.tv.domain.usecase.screen.LogoutScreenUseCase
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -31,8 +33,16 @@ class AdsRunningViewModel(
     private val credentialStorage: ScreenCredentialStorage? = null,
     private val sessionStorage: PairingSessionStorage? = null,
     private val context: Context? = null,
+    private val activePlaylistStorage: ActivePlaylistStorage? = null,
     customPlaylist: List<AdItem>? = null
 ) : ViewModel() {
+
+    /**
+     * Shared in-memory active playlist prepared and applied by the synchronization engine.
+     */
+    val activePlaylist: StateFlow<Playlist?>? = activePlaylistStorage?.currentPlaylist
+
+    fun getActivePlaylist(): Playlist? = activePlaylistStorage?.getPlaylist()
 
     // Defined media playlist for digital signage looping
     val mediaPlaylist: List<AdItem> = customPlaylist ?: listOf(
@@ -267,7 +277,10 @@ class AdsRunningViewModel(
             // 2. Clear pairing session storage
             sessionStorage?.clearSession()
 
-            // 3. Clear any downloaded media files / ads cache
+            // 3. Clear active in-memory playlist
+            activePlaylistStorage?.clearPlaylist()
+
+            // 4. Clear any downloaded media files / ads cache
             context?.let { ctx ->
                 val mediaDir = File(ctx.filesDir, "media")
                 if (mediaDir.exists()) {
