@@ -36,12 +36,11 @@ interface PairingRepository {
     ): Flow<NetworkResult<ScreenCredential>>
 
     /**
-     * Registers a new screen device requiring App-User Supabase JWT.
+     * Registers a new screen device via pairing token session.
      * Automatically saves the issued credential.
      */
     fun registerNewScreen(
         sessionId: String,
-        userToken: String,
         name: String,
         deviceModel: String? = null,
         appVersion: String? = null

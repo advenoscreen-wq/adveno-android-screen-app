@@ -46,6 +46,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.adveno.tv.R
+import com.adveno.tv.presentation.components.TvButton
 import com.adveno.tv.presentation.components.TvConnectingIndicator
 import com.adveno.tv.presentation.theme.AdvenoBackground
 import com.adveno.tv.presentation.theme.AdvenoDimensions
@@ -73,18 +74,25 @@ fun ConnectingScreen(
         onBackClick()
     }
 
-    // 1. Wait 5 seconds on "Connecting..." -> Transition to "Connected!" success state
-    // 2. Display "Connected!" state for 5 seconds -> Automatically navigate to Ads Synchronization
+    // Collect navigation events when final pairing succeeds
     LaunchedEffect(Unit) {
-        viewModel.reset()
-        delay(5000L)
-        viewModel.markConnected()
-        delay(5000L)
-        onNavigateToSync()
+        viewModel.navigationEvent.collect { event ->
+            when (event) {
+                is ConnectingNavigation.NavigateToSync -> {
+                    onNavigateToSync()
+                }
+            }
+        }
+    }
+
+    // Execute backend pairing API for active session
+    LaunchedEffect(Unit) {
+        viewModel.startPairingExecution()
     }
 
     ConnectingScreenContent(
         uiState = uiState,
+        onRetryClick = { viewModel.retry() },
         modifier = modifier
     )
 }
@@ -101,6 +109,7 @@ fun ConnectingScreen(
 @Composable
 fun ConnectingScreenContent(
     uiState: ConnectingUiState,
+    onRetryClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val entranceAlpha = remember { Animatable(0f) }
@@ -250,6 +259,24 @@ fun ConnectingScreenContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = if (isPortrait) 20.dp else 48.dp)
+                    )
+                }
+
+                // Error message and retry button when backend registration fails
+                if (uiState.errorMessage != null) {
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Text(
+                        text = uiState.errorMessage ?: "",
+                        color = Color(0xFFEF4444),
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    TvButton(
+                        text = "Retry Connection",
+                        onClick = onRetryClick,
+                        isLoading = uiState.isLoading
                     )
                 }
             }

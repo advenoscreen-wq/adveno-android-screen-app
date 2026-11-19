@@ -203,6 +203,18 @@ fun ConnectScreenContent(
 
                 Spacer(modifier = Modifier.height(buttonSpacerHeight))
 
+                // Error message display if session creation fails
+                if (uiState.errorMessage != null) {
+                    Text(
+                        text = uiState.errorMessage ?: "",
+                        color = Color(0xFFEF4444),
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+
                 // Responsive Action Buttons
                 if (isPortrait) {
                     // Portrait (9:16): Vertical Stack (UP / DOWN navigation)
@@ -214,6 +226,8 @@ fun ConnectScreenContent(
                         TvButton(
                             text = uiState.newScreenButtonText,
                             onClick = onNewScreenClick,
+                            isLoading = uiState.isLoading && uiState.selectedAction == ConnectAction.NewScreen,
+                            enabled = !uiState.isLoading,
                             leadingIcon = {
                                 Icon(
                                     painter = painterResource(id = R.drawable.ic_add_box),
@@ -231,6 +245,8 @@ fun ConnectScreenContent(
                         TvButton(
                             text = uiState.reconnectButtonText,
                             onClick = onReconnectClick,
+                            isLoading = uiState.isLoading && uiState.selectedAction == ConnectAction.Reconnect,
+                            enabled = !uiState.isLoading,
                             leadingIcon = {
                                 Icon(
                                     painter = painterResource(id = R.drawable.ic_refresh),
@@ -253,6 +269,8 @@ fun ConnectScreenContent(
                         TvButton(
                             text = uiState.newScreenButtonText,
                             onClick = onNewScreenClick,
+                            isLoading = uiState.isLoading && uiState.selectedAction == ConnectAction.NewScreen,
+                            enabled = !uiState.isLoading,
                             leadingIcon = {
                                 Icon(
                                     painter = painterResource(id = R.drawable.ic_add_box),
@@ -271,6 +289,8 @@ fun ConnectScreenContent(
                         TvButton(
                             text = uiState.reconnectButtonText,
                             onClick = onReconnectClick,
+                            isLoading = uiState.isLoading && uiState.selectedAction == ConnectAction.Reconnect,
+                            enabled = !uiState.isLoading,
                             leadingIcon = {
                                 Icon(
                                     painter = painterResource(id = R.drawable.ic_refresh),

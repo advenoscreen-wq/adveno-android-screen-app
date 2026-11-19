@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.adveno.tv.core.di.ViewModelFactory
 import com.adveno.tv.core.navigation.Screen
 import com.adveno.tv.presentation.screens.ads.AdsRunningScreen
 import com.adveno.tv.presentation.screens.ads.AdsRunningViewModel
@@ -28,12 +29,16 @@ import com.adveno.tv.presentation.theme.AdvenoTheme
 
 class MainActivity : ComponentActivity() {
 
-    private val homeViewModel: HomeViewModel by viewModels()
-    private val connectViewModel: ConnectViewModel by viewModels()
-    private val scanToConnectViewModel: ScanToConnectViewModel by viewModels()
-    private val connectingViewModel: ConnectingViewModel by viewModels()
-    private val syncingViewModel: SyncingViewModel by viewModels()
-    private val adsRunningViewModel: AdsRunningViewModel by viewModels()
+    private val viewModelFactory: ViewModelFactory by lazy {
+        ViewModelFactory((application as AdvenoApplication).container)
+    }
+
+    private val homeViewModel: HomeViewModel by viewModels { viewModelFactory }
+    private val connectViewModel: ConnectViewModel by viewModels { viewModelFactory }
+    private val scanToConnectViewModel: ScanToConnectViewModel by viewModels { viewModelFactory }
+    private val connectingViewModel: ConnectingViewModel by viewModels { viewModelFactory }
+    private val syncingViewModel: SyncingViewModel by viewModels { viewModelFactory }
+    private val adsRunningViewModel: AdsRunningViewModel by viewModels { viewModelFactory }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

@@ -41,6 +41,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.adveno.tv.R
+import com.adveno.tv.presentation.components.TvButton
 import com.adveno.tv.presentation.components.TvQrCode
 import com.adveno.tv.presentation.theme.AdvenoBackground
 import com.adveno.tv.presentation.theme.AdvenoDimensions
@@ -62,18 +63,29 @@ fun ScanToConnectScreen(
 
     // Handle Android TV remote Back button to return to Connect Your Screen
     BackHandler {
+        viewModel.stopPolling()
         onBackClick()
     }
 
-    // Automatically navigate to Connecting screen after exactly 5 seconds.
-    // If user presses Back or screen leaves composition, the LaunchedEffect is automatically cancelled.
+    // Collect navigation events triggered by backend status changes
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(5000L)
-        onAutoNavigateToConnecting()
+        viewModel.navigationEvent.collect { event ->
+            when (event) {
+                is ScanToConnectNavigation.NavigateToConnecting -> {
+                    onAutoNavigateToConnecting()
+                }
+            }
+        }
+    }
+
+    // Ensure session is initialized / polling when screen enters composition
+    LaunchedEffect(Unit) {
+        viewModel.initializePairingSession()
     }
 
     ScanToConnectContent(
         uiState = uiState,
+        onRefreshClick = { viewModel.refreshSession() },
         modifier = modifier
     )
 }
@@ -89,6 +101,7 @@ fun ScanToConnectScreen(
 @Composable
 fun ScanToConnectContent(
     uiState: ScanToConnectUiState,
+    onRefreshClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Focus requester to hold remote focus on the QR container
@@ -220,10 +233,39 @@ fun ScanToConnectContent(
                 Spacer(modifier = Modifier.height(if (isPortrait) 28.dp else 22.dp))
 
                 // High-fidelity square QR Code
-                TvQrCode(
-                    modifier = Modifier.size(qrSize),
-                    focusRequester = qrFocusRequester
-                )
+                if (uiState.qrMatrix != null) {
+                    TvQrCode(
+                        matrix = uiState.qrMatrix,
+                        modifier = Modifier.size(qrSize),
+                        focusRequester = qrFocusRequester
+                    )
+                } else {
+                    TvQrCode(
+                        modifier = Modifier.size(qrSize),
+                        focusRequester = qrFocusRequester
+                    )
+                }
+
+                // Error / Expired status handling
+                if (uiState.errorMessage != null) {
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Text(
+                        text = uiState.errorMessage ?: "",
+                        color = Color(0xFFEF4444),
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+
+                    if (uiState.isExpired) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        TvButton(
+                            text = "Refresh QR Code",
+                            onClick = onRefreshClick,
+                            isLoading = uiState.isLoading
+                        )
+                    }
+                }
             }
         }
     }

@@ -10,7 +10,9 @@ data class ConnectUiState(
     val subtitle: String = "Set up a new screen or reconnect an existing one.",
     val newScreenButtonText: String = "New Screen",
     val reconnectButtonText: String = "Reconnect",
-    val selectedAction: ConnectAction? = null
+    val selectedAction: ConnectAction? = null,
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null
 )
 
 sealed interface ConnectAction {

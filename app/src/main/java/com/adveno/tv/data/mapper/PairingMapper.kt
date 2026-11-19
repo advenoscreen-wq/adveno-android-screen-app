@@ -26,6 +26,7 @@ object PairingMapper {
     fun toDomain(response: ScreenPairingSessionStatusResponse): PairingSessionStatus {
         return when (response.status.uppercase()) {
             "PENDING" -> PairingSessionStatus.PENDING
+            "SCANNED" -> PairingSessionStatus.SCANNED
             "CONNECTING" -> PairingSessionStatus.CONNECTING
             "PAIRED" -> PairingSessionStatus.PAIRED
             "EXPIRED" -> PairingSessionStatus.EXPIRED

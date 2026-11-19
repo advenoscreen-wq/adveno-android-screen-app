@@ -10,7 +10,12 @@ enum class PairingSessionStatus {
     PENDING,
 
     /**
-     * Dashboard user scanned the QR code; connection is in progress.
+     * QR code was scanned by the mobile customer app.
+     */
+    SCANNED,
+
+    /**
+     * Dashboard user confirmed pairing; connection is in progress.
      */
     CONNECTING,
 

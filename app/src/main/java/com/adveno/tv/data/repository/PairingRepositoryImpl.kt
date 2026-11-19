@@ -32,7 +32,8 @@ class PairingRepositoryImpl(
             sessionStorage.saveSession(
                 sessionId = response.sessionId,
                 pairingToken = response.pairingToken,
-                expiresAt = response.expiresAt
+                expiresAt = response.expiresAt,
+                pairingType = type
             )
             PairingMapper.toDomain(response, type)
         }
@@ -72,7 +73,6 @@ class PairingRepositoryImpl(
 
     override fun registerNewScreen(
         sessionId: String,
-        userToken: String,
         name: String,
         deviceModel: String?,
         appVersion: String?
@@ -86,7 +86,6 @@ class PairingRepositoryImpl(
 
         val result = remoteDataSource.registerNewScreen(
             sessionId = sessionId,
-            userJwt = userToken,
             pairingToken = pairingToken,
             request = request
         )

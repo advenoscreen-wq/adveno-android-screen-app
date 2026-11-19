@@ -65,9 +65,7 @@ interface PairingApiService {
     /**
      * Registers a new screen device (POST /api/v1/pairing/sessions/{session_id}/screen).
      *
-     * IMPORTANT DEPENDENCY:
-     * Requires both the active [pairingToken] and an authenticated [appUserBearerToken]
-     * (Supabase app-user access token).
+     * Requires the active [pairingToken] via X-Pairing-Token header.
      */
     @Headers(
         "${NetworkConfig.HEADER_NO_DEVICE_AUTH}: true",
@@ -76,7 +74,6 @@ interface PairingApiService {
     @POST("pairing/sessions/{session_id}/screen")
     suspend fun registerNewScreen(
         @Path("session_id") sessionId: String,
-        @Header(NetworkConfig.HEADER_AUTHORIZATION) appUserBearerToken: String,
         @Header(NetworkConfig.HEADER_PAIRING_TOKEN) pairingToken: String? = null,
         @Body request: CreatePairedScreenRequest
     ): Response<CreatePairedScreenResponse>

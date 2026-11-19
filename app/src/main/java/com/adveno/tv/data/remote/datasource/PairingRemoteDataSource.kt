@@ -30,7 +30,6 @@ interface PairingRemoteDataSource {
 
     suspend fun registerNewScreen(
         sessionId: String,
-        userJwt: String,
         pairingToken: String? = null,
         request: CreatePairedScreenRequest
     ): NetworkResult<CreatePairedScreenResponse>
@@ -62,19 +61,12 @@ class PairingRemoteDataSourceImpl(
 
     override suspend fun registerNewScreen(
         sessionId: String,
-        userJwt: String,
         pairingToken: String?,
         request: CreatePairedScreenRequest
     ): NetworkResult<CreatePairedScreenResponse> {
-        val formattedBearer = if (userJwt.startsWith("Bearer ", ignoreCase = true)) {
-            userJwt
-        } else {
-            "Bearer $userJwt"
-        }
         return safeApiCall {
             apiService.registerNewScreen(
                 sessionId = sessionId,
-                appUserBearerToken = formattedBearer,
                 pairingToken = pairingToken,
                 request = request
             )
