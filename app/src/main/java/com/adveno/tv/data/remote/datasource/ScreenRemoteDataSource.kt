@@ -6,11 +6,14 @@ import com.adveno.tv.data.remote.api.ScreenApiService
 import com.adveno.tv.data.remote.dto.request.ScreenSyncAcknowledgmentRequest
 import com.adveno.tv.data.remote.dto.response.AssignedScreenPlaylistResponse
 import com.adveno.tv.data.remote.dto.response.ScreenSyncCheckResponse
+import com.adveno.tv.data.remote.dto.response.VerifyScreenCredentialResponse
 
 /**
  * Remote data source abstraction for authenticated screen network operations.
  */
 interface ScreenRemoteDataSource {
+    suspend fun verifyCredential(credential: String): NetworkResult<VerifyScreenCredentialResponse>
+
     suspend fun syncCheck(): NetworkResult<ScreenSyncCheckResponse>
 
     suspend fun getAssignedPlaylist(): NetworkResult<AssignedScreenPlaylistResponse?>
@@ -25,6 +28,14 @@ interface ScreenRemoteDataSource {
 class ScreenRemoteDataSourceImpl(
     private val apiService: ScreenApiService
 ) : ScreenRemoteDataSource {
+
+    override suspend fun verifyCredential(credential: String): NetworkResult<VerifyScreenCredentialResponse> {
+        return safeApiCall {
+            apiService.verifyCredential(
+                authHeader = "Bearer $credential"
+            )
+        }
+    }
 
     override suspend fun syncCheck(): NetworkResult<ScreenSyncCheckResponse> {
         return safeApiCall { apiService.syncCheck() }

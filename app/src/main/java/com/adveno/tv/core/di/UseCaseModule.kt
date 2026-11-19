@@ -10,6 +10,7 @@ import com.adveno.tv.domain.usecase.pairing.PollPairingStatusUseCase
 import com.adveno.tv.domain.usecase.pairing.RegisterNewScreenUseCase
 import com.adveno.tv.domain.usecase.playlist.GetAssignedPlaylistUseCase
 import com.adveno.tv.domain.usecase.screen.LogoutScreenUseCase
+import com.adveno.tv.domain.usecase.screen.VerifyCredentialUseCase
 import com.adveno.tv.domain.usecase.sync.AcknowledgeSyncUseCase
 import com.adveno.tv.domain.usecase.sync.CheckSyncStatusUseCase
 
@@ -33,6 +34,10 @@ object UseCaseModule {
 
     fun provideLogoutScreenUseCase(repository: ScreenRepository): LogoutScreenUseCase {
         return LogoutScreenUseCase(repository)
+    }
+
+    fun provideVerifyCredentialUseCase(repository: ScreenRepository): VerifyCredentialUseCase {
+        return VerifyCredentialUseCase(repository)
     }
 
     fun provideGetAssignedPlaylistUseCase(repository: PlaylistRepository): GetAssignedPlaylistUseCase {

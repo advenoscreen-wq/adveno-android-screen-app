@@ -9,6 +9,12 @@ import kotlinx.coroutines.flow.Flow
 interface ScreenRepository {
 
     /**
+     * Verifies whether the TV's locally stored credential is valid and active on the backend.
+     * If the credential is revoked (401) or unknown (404), automatically clears it locally.
+     */
+    fun verifyCredential(): Flow<NetworkResult<Boolean>>
+
+    /**
      * Revokes the active screen credential on the backend and clears local storage.
      */
     fun logoutScreen(): Flow<NetworkResult<Unit>>

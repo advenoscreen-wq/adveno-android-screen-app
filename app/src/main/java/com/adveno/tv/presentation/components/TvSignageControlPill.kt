@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,7 +40,7 @@ import com.adveno.tv.presentation.theme.AdvenoTextSecondary
 
 /**
  * Compact, TV-friendly control button for the digital signage overlay (Logout & Sync buttons).
- * Supports D-pad navigation, focus scaling, cyan neon glow, and touch clicks.
+ * Supports D-pad navigation, focus scaling, cyan neon glow, loading states, and touch clicks.
  */
 @Composable
 fun TvSignageControlPill(
@@ -47,6 +48,8 @@ fun TvSignageControlPill(
     @DrawableRes iconRes: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isLoading: Boolean = false,
+    enabled: Boolean = true,
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() }
 ) {
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -95,17 +98,26 @@ fun TvSignageControlPill(
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
+                enabled = enabled && !isLoading,
                 onClick = onClick
             )
             .focusable(interactionSource = interactionSource)
             .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
-        Icon(
-            painter = painterResource(id = iconRes),
-            contentDescription = text,
-            tint = contentColor,
-            modifier = Modifier.size(18.dp)
-        )
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = contentColor
+            )
+        } else {
+            Icon(
+                painter = painterResource(id = iconRes),
+                contentDescription = text,
+                tint = contentColor,
+                modifier = Modifier.size(18.dp)
+            )
+        }
         Text(
             text = text,
             color = contentColor,
@@ -114,4 +126,3 @@ fun TvSignageControlPill(
         )
     }
 }
-

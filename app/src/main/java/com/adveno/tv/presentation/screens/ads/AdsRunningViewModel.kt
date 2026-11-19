@@ -1,8 +1,15 @@
 package com.adveno.tv.presentation.screens.ads
 
+import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.adveno.tv.R
+import com.adveno.tv.core.network.NetworkError
+import com.adveno.tv.core.network.NetworkResult
+import com.adveno.tv.core.storage.PairingSessionStorage
+import com.adveno.tv.core.storage.ScreenCredentialStorage
+import com.adveno.tv.domain.usecase.screen.LogoutScreenUseCase
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,14 +17,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * ViewModel responsible for the digital signage advertisement player:
  * - Manages playlist loop: Video (10s) -> Image (5s) -> Video (10s) -> Image (5s) indefinitely.
  * - Synchronizes current ad progress (0% to 100%) for both video and image items.
  * - Handles auto-hide overlay controls after 3 seconds of user inactivity.
+ * - Manages clean device logout (POST /api/v1/screens/logout) and local media/credential eviction.
  */
 class AdsRunningViewModel(
+    private val logoutScreenUseCase: LogoutScreenUseCase? = null,
+    private val credentialStorage: ScreenCredentialStorage? = null,
+    private val sessionStorage: PairingSessionStorage? = null,
+    private val context: Context? = null,
     customPlaylist: List<AdItem>? = null
 ) : ViewModel() {
 
@@ -156,6 +169,116 @@ class AdsRunningViewModel(
 
         if (startTimer) {
             scheduleCurrentAdTimer(nextItem)
+        }
+    }
+
+    /**
+     * Executes device logout on backend (POST /api/v1/screens/logout) and clears all local data.
+     * Shows loading effect on Logout button and displays a graceful TV notification on network errors.
+     */
+    fun logout(onSuccess: () -> Unit) {
+        if (_uiState.value.isLoggingOut) return
+
+        Log.d("AdsRunningVM", "Logout triggered. Starting logout workflow...")
+        _uiState.update {
+            it.copy(
+                isLoggingOut = true,
+                isControlsVisible = true,
+                errorMessage = null
+            )
+        }
+
+        viewModelScope.launch {
+            if (logoutScreenUseCase != null) {
+                logoutScreenUseCase.invoke().collect { result ->
+                    when (result) {
+                        is NetworkResult.Success -> {
+                            Log.d("AdsRunningVM", "Backend logout succeeded. Evicting local credentials and media.")
+                            clearAllLocalData()
+                            _uiState.update { it.copy(isLoggingOut = false) }
+                            reset()
+                            onSuccess()
+                        }
+                        is NetworkResult.Error -> {
+                            when (val err = result.error) {
+                                is NetworkError.DeviceRevoked -> {
+                                    // Device already revoked or disconnected on backend; wipe local state and exit
+                                    Log.d("AdsRunningVM", "Device was already revoked (${err.errorCode}). Wiping local data.")
+                                    clearAllLocalData()
+                                    _uiState.update { it.copy(isLoggingOut = false) }
+                                    reset()
+                                    onSuccess()
+                                }
+                                is NetworkError.NetworkFailure -> {
+                                    val errorMsg = "No internet connection. Unable to logout."
+                                    Log.w("AdsRunningVM", errorMsg)
+                                    _uiState.update {
+                                        it.copy(
+                                            isLoggingOut = false,
+                                            errorMessage = errorMsg,
+                                            isControlsVisible = true
+                                        )
+                                    }
+                                    delay(4000L)
+                                    _uiState.update { it.copy(errorMessage = null) }
+                                }
+                                else -> {
+                                    val errorMsg = err.message.takeIf { it.isNotBlank() }
+                                        ?: "Logout failed. Please check network and try again."
+                                    Log.e("AdsRunningVM", "Logout error: $errorMsg")
+                                    _uiState.update {
+                                        it.copy(
+                                            isLoggingOut = false,
+                                            errorMessage = errorMsg,
+                                            isControlsVisible = true
+                                        )
+                                    }
+                                    delay(4000L)
+                                    _uiState.update { it.copy(errorMessage = null) }
+                                }
+                            }
+                        }
+                        is NetworkResult.Loading -> {
+                            _uiState.update { it.copy(isLoggingOut = true) }
+                        }
+                    }
+                }
+            } else {
+                // Fallback when offline or running in preview mode
+                clearAllLocalData()
+                _uiState.update { it.copy(isLoggingOut = false) }
+                reset()
+                onSuccess()
+            }
+        }
+    }
+
+    /**
+     * Removes all local storage, screen credentials, pairing session data, and cached media.
+     */
+    fun clearAllLocalData() {
+        try {
+            // 1. Clear secure screen credentials
+            credentialStorage?.clearCredential()
+
+            // 2. Clear pairing session storage
+            sessionStorage?.clearSession()
+
+            // 3. Clear any downloaded media files / ads cache
+            context?.let { ctx ->
+                val mediaDir = File(ctx.filesDir, "media")
+                if (mediaDir.exists()) {
+                    mediaDir.deleteRecursively()
+                }
+                val cacheMediaDir = File(ctx.cacheDir, "media")
+                if (cacheMediaDir.exists()) {
+                    cacheMediaDir.deleteRecursively()
+                }
+                ctx.cacheDir.deleteRecursively()
+            }
+            Log.d("AdsRunningVM", "All local credentials, session tokens, and cached media cleared successfully.")
+        } catch (e: Exception) {
+            Log.w("AdsRunningVM", "Error clearing local media or credential storage", e)
         }
     }
 

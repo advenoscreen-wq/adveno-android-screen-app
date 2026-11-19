@@ -9,8 +9,11 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +24,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +36,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onKeyEvent
@@ -40,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -74,8 +82,7 @@ fun AdsRunningScreen(
 
     // Handle remote Back button: safely logout / clear back stack
     BackHandler {
-        viewModel.reset()
-        onLogoutClick()
+        viewModel.logout(onSuccess = onLogoutClick)
     }
 
     // Start initial 3-second auto-hide timer and playlist playback loop when screen opens
@@ -90,8 +97,7 @@ fun AdsRunningScreen(
         onVideoCompleted = { viewModel.onVideoCompleted() },
         onVideoError = { viewModel.onVideoError() },
         onLogoutClick = {
-            viewModel.reset()
-            onLogoutClick()
+            viewModel.logout(onSuccess = onLogoutClick)
         },
         onSyncClick = onSyncClick,
         modifier = modifier
@@ -282,10 +288,45 @@ fun AdsRunningScreenContent(
 
                     // Top-Right Logout Button
                     TvSignageControlPill(
-                        text = "Logout",
+                        text = if (uiState.isLoggingOut) "Logging out..." else "Logout",
                         iconRes = R.drawable.ic_logout,
+                        isLoading = uiState.isLoggingOut,
                         onClick = onLogoutClick
                     )
+                }
+
+                // Floating Error Notification Banner (e.g. No Internet connection on Logout)
+                AnimatedVisibility(
+                    visible = uiState.errorMessage != null,
+                    enter = fadeIn(animationSpec = tween(300)) + slideInVertically(animationSpec = tween(300)) { -20 },
+                    exit = fadeOut(animationSpec = tween(300)) + slideOutVertically(animationSpec = tween(300)) { -20 },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = if (isPortrait) 76.dp else 84.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier
+                            .shadow(12.dp, shape = RoundedCornerShape(24.dp))
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Color(0xE60F172A))
+                            .border(1.5.dp, Color(0xFFEF4444), RoundedCornerShape(24.dp))
+                            .padding(horizontal = 20.dp, vertical = 10.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_refresh),
+                            contentDescription = "Error notification",
+                            tint = Color(0xFFEF4444),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = uiState.errorMessage ?: "",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
 
                 // Bottom-Right Sync Button

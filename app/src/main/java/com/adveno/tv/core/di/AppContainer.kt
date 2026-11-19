@@ -17,6 +17,7 @@ import com.adveno.tv.domain.usecase.pairing.PollPairingStatusUseCase
 import com.adveno.tv.domain.usecase.pairing.RegisterNewScreenUseCase
 import com.adveno.tv.domain.usecase.playlist.GetAssignedPlaylistUseCase
 import com.adveno.tv.domain.usecase.screen.LogoutScreenUseCase
+import com.adveno.tv.domain.usecase.screen.VerifyCredentialUseCase
 import com.adveno.tv.domain.usecase.sync.AcknowledgeSyncUseCase
 import com.adveno.tv.domain.usecase.sync.CheckSyncStatusUseCase
 import okhttp3.OkHttpClient
@@ -26,7 +27,7 @@ import retrofit2.Retrofit
  * Dependency container providing single-source-of-truth component graphs.
  * Follows the official Android Architecture Manual DI pattern.
  */
-class AppContainer(context: Context) {
+class AppContainer(val context: Context) {
 
     // Storage
     val credentialStorage: ScreenCredentialStorage by lazy {
@@ -99,6 +100,10 @@ class AppContainer(context: Context) {
 
     val logoutScreenUseCase: LogoutScreenUseCase by lazy {
         UseCaseModule.provideLogoutScreenUseCase(screenRepository)
+    }
+
+    val verifyCredentialUseCase: VerifyCredentialUseCase by lazy {
+        UseCaseModule.provideVerifyCredentialUseCase(screenRepository)
     }
 
     val getAssignedPlaylistUseCase: GetAssignedPlaylistUseCase by lazy {

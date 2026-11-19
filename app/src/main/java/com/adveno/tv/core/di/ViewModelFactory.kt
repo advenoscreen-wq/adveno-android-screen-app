@@ -20,7 +20,9 @@ class ViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         return when {
             modelClass.isAssignableFrom(HomeViewModel::class.java) -> {
-                HomeViewModel() as T
+                HomeViewModel(
+                    verifyCredentialUseCase = appContainer.verifyCredentialUseCase
+                ) as T
             }
             modelClass.isAssignableFrom(ConnectViewModel::class.java) -> {
                 ConnectViewModel(
@@ -45,7 +47,12 @@ class ViewModelFactory(
                 SyncingViewModel() as T
             }
             modelClass.isAssignableFrom(AdsRunningViewModel::class.java) -> {
-                AdsRunningViewModel() as T
+                AdsRunningViewModel(
+                    logoutScreenUseCase = appContainer.logoutScreenUseCase,
+                    credentialStorage = appContainer.credentialStorage,
+                    sessionStorage = appContainer.sessionStorage,
+                    context = appContainer.context
+                ) as T
             }
             else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }

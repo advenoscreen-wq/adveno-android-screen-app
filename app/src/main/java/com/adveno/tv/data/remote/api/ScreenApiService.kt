@@ -1,21 +1,34 @@
 package com.adveno.tv.data.remote.api
 
+import com.adveno.tv.core.network.NetworkConfig
 import com.adveno.tv.data.remote.dto.request.ScreenSyncAcknowledgmentRequest
 import com.adveno.tv.data.remote.dto.response.AssignedScreenPlaylistResponse
 import com.adveno.tv.data.remote.dto.response.ScreenSyncCheckResponse
+import com.adveno.tv.data.remote.dto.response.VerifyScreenCredentialResponse
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.POST
 
 /**
  * Retrofit contract for Adveno TV authenticated screen endpoints (/api/v1/screens).
  *
  * Authentication:
- * All endpoints require `X-Pairing-Token: <screen-credential>` injected automatically
+ * All endpoints require `Authorization: Bearer <screen-credential>` injected automatically
  * via [com.adveno.tv.core.network.AuthInterceptor].
  */
 interface ScreenApiService {
+
+    /**
+     * Checks whether the TV's locally stored credential still belongs to an active screen
+     * (POST /api/v1/screens/credential/verify).
+     * Requires Authorization: Bearer <screen-credential>.
+     */
+    @POST("screens/credential/verify")
+    suspend fun verifyCredential(
+        @Header(NetworkConfig.HEADER_AUTHORIZATION) authHeader: String? = null
+    ): Response<VerifyScreenCredentialResponse>
 
     /**
      * Heartbeat & synchronization check (POST /api/v1/screens/sync-check).

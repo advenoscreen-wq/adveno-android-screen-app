@@ -54,14 +54,23 @@ import com.adveno.tv.presentation.theme.AdvenoTheme
 fun HomeScreen(
     viewModel: HomeViewModel,
     modifier: Modifier = Modifier,
-    onNavigateToPairing: (() -> Unit)? = null
+    onNavigateToPairing: () -> Unit,
+    onNavigateToAds: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
+    // Re-check and verify credentials whenever the Home screen is displayed
+    LaunchedEffect(Unit) {
+        viewModel.checkAndVerifyCredential()
+    }
+
     HomeScreenContent(
         uiState = uiState,
-        onStartConnectingClick = {
-            viewModel.onStartConnecting(onNavigateToPairing = onNavigateToPairing)
+        onActionButtonClick = {
+            viewModel.onActionButtonClick(
+                onNavigateToPairing = onNavigateToPairing,
+                onNavigateToAds = onNavigateToAds
+            )
         },
         modifier = modifier
     )
@@ -78,7 +87,7 @@ fun HomeScreen(
 @Composable
 fun HomeScreenContent(
     uiState: HomeUiState,
-    onStartConnectingClick: () -> Unit,
+    onActionButtonClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val buttonFocusRequester = remember { FocusRequester() }
@@ -177,13 +186,18 @@ fun HomeScreenContent(
 
                 TvButton(
                     text = uiState.buttonText,
-                    onClick = onStartConnectingClick,
+                    onClick = onActionButtonClick,
                     enabled = !uiState.isConnecting,
                     isLoading = uiState.isConnecting,
                     leadingIcon = {
+                        val iconRes = if (uiState.isCredentialValid) {
+                            R.drawable.ic_media_play
+                        } else {
+                            R.drawable.ic_link
+                        }
                         Icon(
-                            painter = painterResource(id = R.drawable.ic_link),
-                            contentDescription = "Connection link",
+                            painter = painterResource(id = iconRes),
+                            contentDescription = uiState.buttonText,
                             tint = Color.White,
                             modifier = Modifier.size(22.dp)
                         )
@@ -303,7 +317,7 @@ fun HomeScreenLandscapePreview() {
     AdvenoTheme {
         HomeScreenContent(
             uiState = HomeUiState(),
-            onStartConnectingClick = {}
+            onActionButtonClick = {}
         )
     }
 }
@@ -319,7 +333,7 @@ fun HomeScreenPortraitPreview() {
     AdvenoTheme {
         HomeScreenContent(
             uiState = HomeUiState(),
-            onStartConnectingClick = {}
+            onActionButtonClick = {}
         )
     }
 }

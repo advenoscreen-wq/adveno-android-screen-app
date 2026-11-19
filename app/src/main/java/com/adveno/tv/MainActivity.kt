@@ -53,6 +53,9 @@ class MainActivity : ComponentActivity() {
                             onNavigateToPairing = {
                                 currentScreen = Screen.ConnectScreen
                             },
+                            onNavigateToAds = {
+                                currentScreen = Screen.AdsRunning
+                            },
                             modifier = Modifier.fillMaxSize()
                         )
                     }
