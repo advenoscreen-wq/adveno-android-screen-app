@@ -12,7 +12,7 @@ import retrofit2.http.POST
  * Retrofit contract for Adveno TV authenticated screen endpoints (/api/v1/screens).
  *
  * Authentication:
- * All endpoints require `Authorization: Bearer <screen-credential>` injected automatically
+ * All endpoints require `X-Pairing-Token: <screen-credential>` injected automatically
  * via [com.adveno.tv.core.network.AuthInterceptor].
  */
 interface ScreenApiService {

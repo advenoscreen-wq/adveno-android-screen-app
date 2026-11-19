@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -39,7 +40,10 @@ class ScanToConnectViewModel(
     private val _uiState = MutableStateFlow(ScanToConnectUiState())
     val uiState: StateFlow<ScanToConnectUiState> = _uiState.asStateFlow()
 
-    private val _navigationEvent = MutableSharedFlow<ScanToConnectNavigation>()
+    private val _navigationEvent = MutableSharedFlow<ScanToConnectNavigation>(
+        replay = 1,
+        extraBufferCapacity = 1
+    )
     val navigationEvent: SharedFlow<ScanToConnectNavigation> = _navigationEvent.asSharedFlow()
 
     private var pollingJob: Job? = null
@@ -101,55 +105,50 @@ class ScanToConnectViewModel(
             while (isActive) {
                 delay(5000L) // Wait exactly 5 seconds before poll
 
-                pollPairingStatusUseCase(sessionId).collect { result ->
-                    when (result) {
-                        is NetworkResult.Success -> {
-                            val status = result.data
-                            Log.d("ScanToConnectVM", "Poll status received: $status")
-                            _uiState.update { it.copy(status = status) }
+                when (val result = pollPairingStatusUseCase(sessionId).first()) {
+                    is NetworkResult.Success -> {
+                        val status = result.data
+                        Log.d("ScanToConnectVM", "Poll status received: $status")
+                        _uiState.update { it.copy(status = status) }
 
-                            when (status) {
-                                PairingSessionStatus.CONNECTING -> {
-                                    Log.d("ScanToConnectVM", "Status is CONNECTING. Navigating to Connecting screen.")
-                                    stopPolling()
-                                    _navigationEvent.emit(ScanToConnectNavigation.NavigateToConnecting)
+                        when (status) {
+                            PairingSessionStatus.CONNECTING, PairingSessionStatus.PAIRED -> {
+                                Log.d("ScanToConnectVM", "Status is $status. Navigating to Connecting screen.")
+                                _navigationEvent.emit(ScanToConnectNavigation.NavigateToConnecting)
+                                break
+                            }
+                            PairingSessionStatus.EXPIRED -> {
+                                Log.d("ScanToConnectVM", "Status is EXPIRED. Halting polling.")
+                                _uiState.update {
+                                    it.copy(
+                                        isExpired = true,
+                                        errorMessage = "Pairing session has expired. Please refresh to generate a new QR code."
+                                    )
                                 }
-                                PairingSessionStatus.EXPIRED -> {
-                                    Log.d("ScanToConnectVM", "Status is EXPIRED. Halting polling.")
-                                    stopPolling()
-                                    _uiState.update {
-                                        it.copy(
-                                            isExpired = true,
-                                            errorMessage = "Pairing session has expired. Please refresh to generate a new QR code."
-                                        )
-                                    }
-                                }
-                                PairingSessionStatus.SCANNED -> {
-                                    _uiState.update {
-                                        it.copy(
-                                            heading = "QR Code Scanned",
-                                            description = "Device detected. Confirming connection..."
-                                        )
-                                    }
-                                }
-                                PairingSessionStatus.PAIRED -> {
-                                    stopPolling()
-                                    _navigationEvent.emit(ScanToConnectNavigation.NavigateToConnecting)
-                                }
-                                PairingSessionStatus.PENDING -> {
-                                    // Awaiting scan; continue loop
+                                break
+                            }
+                            PairingSessionStatus.SCANNED -> {
+                                _uiState.update {
+                                    it.copy(
+                                        heading = "QR Code Scanned",
+                                        description = "Device detected. Confirming connection..."
+                                    )
                                 }
                             }
+                            PairingSessionStatus.PENDING -> {
+                                // Awaiting scan; continue loop
+                            }
                         }
-                        is NetworkResult.Error -> {
-                            Log.w("ScanToConnectVM", "Transient polling error: ${result.error.message}")
-                        }
-                        is NetworkResult.Loading -> {
-                            // Non-blocking background poll
-                        }
+                    }
+                    is NetworkResult.Error -> {
+                        Log.w("ScanToConnectVM", "Transient polling error: ${result.error.message}")
+                    }
+                    is NetworkResult.Loading -> {
+                        // Non-blocking background poll
                     }
                 }
             }
+            pollingJob = null
         }
     }
 

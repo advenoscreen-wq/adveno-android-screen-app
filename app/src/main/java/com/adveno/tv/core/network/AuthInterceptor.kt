@@ -5,13 +5,14 @@ import okhttp3.Interceptor
 import okhttp3.Response
 
 /**
- * Attaches the device authentication header (`Authorization: Bearer <screen-credential>`)
+ * Attaches the device screen credential header (`X-Pairing-Token: <screen-credential>`)
  * to screen-authenticated requests.
  *
  * Rules:
  * 1. Skips requests marked with [NetworkConfig.HEADER_NO_DEVICE_AUTH].
- * 2. Does not overwrite an existing Authorization header (e.g., user Supabase JWT).
- * 3. Clears local credential if server responds with SCREEN_NOT_FOUND or SCREEN_DISCONNECTED.
+ * 2. Does not overwrite an existing X-Pairing-Token header.
+ * 3. Never places screen credentials into Authorization header (backend expects Header(alias="X-Pairing-Token")).
+ * 4. Clears local credential if server responds with SCREEN_NOT_FOUND, SCREEN_DISCONNECTED, or INVALID_SCREEN_CREDENTIAL.
  */
 class AuthInterceptor(
     private val credentialStorage: ScreenCredentialStorage
@@ -28,15 +29,15 @@ class AuthInterceptor(
             return chain.proceed(strippedRequest)
         }
 
-        // If an Authorization header is already present, do not overwrite it
-        if (originalRequest.header(NetworkConfig.HEADER_AUTHORIZATION) != null) {
+        // If an X-Pairing-Token header is already present, do not overwrite it
+        if (originalRequest.header(NetworkConfig.HEADER_PAIRING_TOKEN) != null) {
             return chain.proceed(originalRequest)
         }
 
         val credential = credentialStorage.getCredential()
         val request = if (!credential.isNullOrBlank()) {
             originalRequest.newBuilder()
-                .header(NetworkConfig.HEADER_AUTHORIZATION, "${NetworkConfig.BEARER_PREFIX}$credential")
+                .header(NetworkConfig.HEADER_PAIRING_TOKEN, credential)
                 .build()
         } else {
             originalRequest

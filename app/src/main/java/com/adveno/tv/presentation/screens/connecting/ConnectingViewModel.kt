@@ -37,7 +37,10 @@ class ConnectingViewModel(
     private val _uiState = MutableStateFlow(ConnectingUiState())
     val uiState: StateFlow<ConnectingUiState> = _uiState.asStateFlow()
 
-    private val _navigationEvent = MutableSharedFlow<ConnectingNavigation>()
+    private val _navigationEvent = MutableSharedFlow<ConnectingNavigation>(
+        replay = 1,
+        extraBufferCapacity = 1
+    )
     val navigationEvent: SharedFlow<ConnectingNavigation> = _navigationEvent.asSharedFlow()
 
     fun startPairingExecution() {

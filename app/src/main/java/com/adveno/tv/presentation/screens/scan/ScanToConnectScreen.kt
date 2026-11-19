@@ -78,6 +78,15 @@ fun ScanToConnectScreen(
         }
     }
 
+    // Direct state reaction: Navigate immediately if status becomes CONNECTING or PAIRED
+    LaunchedEffect(uiState.status) {
+        if (uiState.status == com.adveno.tv.domain.model.pairing.PairingSessionStatus.CONNECTING ||
+            uiState.status == com.adveno.tv.domain.model.pairing.PairingSessionStatus.PAIRED
+        ) {
+            onAutoNavigateToConnecting()
+        }
+    }
+
     // Ensure session is initialized / polling when screen enters composition
     LaunchedEffect(Unit) {
         viewModel.initializePairingSession()
