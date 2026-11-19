@@ -50,9 +50,18 @@ class ScreenRepositoryImpl(
     override fun logoutScreen(): Flow<NetworkResult<Unit>> = flow {
         val result = remoteDataSource.logout()
 
-        result.onSuccess {
-            // Server revoked the credential successfully; clear local device store
-            credentialStorage.clearCredential()
+        when (result) {
+            is NetworkResult.Success -> {
+                // Server revoked the credential successfully; clear local device store
+                credentialStorage.clearCredential()
+            }
+            is NetworkResult.Error -> {
+                // If backend explicitly confirms credential is already revoked/disconnected, clear local credential
+                if (result.error is NetworkError.DeviceRevoked) {
+                    credentialStorage.clearCredential()
+                }
+            }
+            is NetworkResult.Loading -> {}
         }
 
         emit(result)

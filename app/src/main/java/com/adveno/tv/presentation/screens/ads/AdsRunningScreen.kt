@@ -80,8 +80,8 @@ fun AdsRunningScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    // Handle remote Back button: safely logout / clear back stack
-    BackHandler {
+    // Handle remote Back button: safely logout / clear back stack when not already logging out
+    BackHandler(enabled = !uiState.isLoggingOut) {
         viewModel.logout(onSuccess = onLogoutClick)
     }
 

@@ -210,7 +210,7 @@ class AdsRunningViewModel(
                                     onSuccess()
                                 }
                                 is NetworkError.NetworkFailure -> {
-                                    val errorMsg = "No internet connection. Unable to logout."
+                                    val errorMsg = "Unable to logout. Please check your internet connection and try again."
                                     Log.w("AdsRunningVM", errorMsg)
                                     _uiState.update {
                                         it.copy(
@@ -224,7 +224,7 @@ class AdsRunningViewModel(
                                 }
                                 else -> {
                                     val errorMsg = err.message.takeIf { it.isNotBlank() }
-                                        ?: "Logout failed. Please check network and try again."
+                                        ?: "Logout failed due to a server error. Please try again."
                                     Log.e("AdsRunningVM", "Logout error: $errorMsg")
                                     _uiState.update {
                                         it.copy(
@@ -244,17 +244,20 @@ class AdsRunningViewModel(
                     }
                 }
             } else {
-                // Fallback when offline or running in preview mode
-                clearAllLocalData()
-                _uiState.update { it.copy(isLoggingOut = false) }
-                reset()
-                onSuccess()
+                // If use case is null (e.g. preview mode or unconfigured), do NOT clear data silently
+                _uiState.update {
+                    it.copy(
+                        isLoggingOut = false,
+                        errorMessage = "Unable to logout. Service unavailable."
+                    )
+                }
             }
         }
     }
 
     /**
      * Removes all local storage, screen credentials, pairing session data, and cached media.
+     * Only invoked after backend confirms successful logout or credential revocation.
      */
     fun clearAllLocalData() {
         try {
@@ -274,7 +277,10 @@ class AdsRunningViewModel(
                 if (cacheMediaDir.exists()) {
                     cacheMediaDir.deleteRecursively()
                 }
-                ctx.cacheDir.deleteRecursively()
+                val adsCacheDir = File(ctx.cacheDir, "ads")
+                if (adsCacheDir.exists()) {
+                    adsCacheDir.deleteRecursively()
+                }
             }
             Log.d("AdsRunningVM", "All local credentials, session tokens, and cached media cleared successfully.")
         } catch (e: Exception) {
