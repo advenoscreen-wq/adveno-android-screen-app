@@ -13,6 +13,7 @@ import com.adveno.tv.domain.usecase.playlist.GetAssignedPlaylistUseCase
 import com.adveno.tv.domain.usecase.sync.AcknowledgeSyncUseCase
 import com.adveno.tv.domain.usecase.sync.CheckSyncStatusUseCase
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,12 +24,11 @@ import kotlinx.coroutines.launch
 
 /**
  * ViewModel orchestrating the Adveno screen synchronization workflow:
- * 1. Checks synchronization status (POST /api/v1/screens/sync-check).
- * 2. Retrieves assigned playlist (GET /api/v1/screens/assigned-playlist) if sync is needed.
- * 3. Downloads required image and video media files to app-private storage.
- * 4. Validates integrity and prepares the in-memory active playlist.
- * 5. Acknowledges applied revision (POST /api/v1/screens/sync-acknowledgments).
- * 6. Handles credential revocation (401/404) and transport failures with TV-friendly retries.
+ *
+ * Stage A: Playlist Fetch (retries only playlist fetch, max 3 attempts; does not re-check sync status).
+ * Stage B: Media Download (retries each media item up to 3 attempts; preserves downloaded files; does not re-fetch playlist).
+ * Stage C: Apply & Acknowledge (immediately applies playlist locally; retries acknowledgment up to 3 attempts;
+ *          CRITICAL: never blocks or rolls back on acknowledgment failure—continues to Ads playback).
  */
 class SyncingViewModel(
     private val checkSyncStatusUseCase: CheckSyncStatusUseCase? = null,
@@ -44,6 +44,12 @@ class SyncingViewModel(
 
     private var syncJob: Job? = null
 
+    companion object {
+        private const val TAG = "SyncingViewModel"
+        private const val MAX_ATTEMPTS = 3
+        private const val RETRY_DELAY_MS = 2000L
+    }
+
     /**
      * Initiates the end-to-end synchronization process.
      * Prevents duplicate simultaneous executions.
@@ -58,7 +64,7 @@ class SyncingViewModel(
         if (checkSyncStatusUseCase == null || getAssignedPlaylistUseCase == null ||
             acknowledgeSyncUseCase == null || mediaDownloader == null
         ) {
-            Log.w(TAG, "Dependencies not provided. Defaulting to synced demo state.")
+            Log.w(TAG, "Dependencies not provided. Defaulting to synced state.")
             _uiState.update {
                 it.copy(
                     isSynced = true,
@@ -75,11 +81,14 @@ class SyncingViewModel(
                 it.copy(
                     isSynced = false,
                     isRevoked = false,
+                    isRecoveryMode = false,
                     progress = 0.05f,
                     heading = "Syncing Ads...",
                     description = "Checking for updates...",
                     errorMessage = null,
-                    canRetry = false
+                    currentAttempt = 1,
+                    maxAttempts = MAX_ATTEMPTS,
+                    isAutoRetrying = false
                 )
             }
 
@@ -97,7 +106,22 @@ class SyncingViewModel(
                     Pair(data.needSync, data.desiredRevision)
                 }
                 is NetworkResult.Error -> {
-                    handleSyncError(syncCheckResult.error, step = "Checking for updates")
+                    val error = syncCheckResult.error
+                    if (error is NetworkError.DeviceRevoked) {
+                        handleRevocation(error)
+                        return@launch
+                    }
+                    // Offline or server temporary error during syncCheck -> enter recovery mode
+                    // so TV can continue displaying cached offline advertisements
+                    Log.w(TAG, "Sync check failed: ${error.message}. Showing recovery options.")
+                    _uiState.update {
+                        it.copy(
+                            isRecoveryMode = true,
+                            recoveryTitle = "Unable to synchronize your content.",
+                            recoveryMessage = "Could not connect to Adveno server. You can contact support or continue showing existing ads.",
+                            isAutoRetrying = false
+                        )
+                    }
                     return@launch
                 }
                 is NetworkResult.Loading -> {
@@ -105,72 +129,115 @@ class SyncingViewModel(
                 }
             }
 
-            // If sync is not required, keep existing playlist / default dummy and transition directly to Synced
+            // If sync is not required, screen is already up to date
             if (!needSync) {
-                Log.d(TAG, "Screen is up-to-date (need_sync = false). Skipping playlist download and acknowledgment.")
+                Log.d(TAG, "Screen is up-to-date (need_sync = false). Transitioning directly to Synced.")
                 _uiState.update {
                     it.copy(
                         isSynced = true,
                         progress = 1.0f,
                         heading = "Synced!",
                         description = "Your advertisements are ready.",
+                        isRecoveryMode = false,
                         errorMessage = null,
-                        canRetry = false
+                        isAutoRetrying = false
                     )
                 }
                 return@launch
             }
 
             // -------------------------------------------------------------
-            // STEP 2: Retrieve Assigned Playlist (GET /api/v1/screens/assigned-playlist)
+            // STAGE A: Retrieve Assigned Playlist (GET /api/v1/screens/assigned-playlist)
+            // Maximum 3 attempts; does NOT repeat syncCheck.
             // -------------------------------------------------------------
-            Log.d(TAG, "Step 2: Retrieving assigned playlist...")
-            _uiState.update {
-                it.copy(
-                    progress = 0.15f,
-                    heading = "Syncing Ads...",
-                    description = "Retrieving playlist..."
-                )
+            Log.d(TAG, "Stage A: Fetching assigned playlist with retry mechanism...")
+            var playlistAttempt = 1
+            var fetchedPlaylist: Playlist? = null
+
+            while (playlistAttempt <= MAX_ATTEMPTS && isActive) {
+                _uiState.update {
+                    it.copy(
+                        progress = 0.15f,
+                        heading = "Syncing Ads...",
+                        description = if (playlistAttempt == 1) {
+                            "Retrieving playlist..."
+                        } else {
+                            "Retrieving playlist (Attempt $playlistAttempt of $MAX_ATTEMPTS)..."
+                        },
+                        currentAttempt = playlistAttempt,
+                        maxAttempts = MAX_ATTEMPTS,
+                        isAutoRetrying = playlistAttempt > 1,
+                        isRecoveryMode = false
+                    )
+                }
+
+                if (playlistAttempt > 1) {
+                    delay(RETRY_DELAY_MS)
+                }
+
+                if (!isActive) return@launch
+
+                val playlistResult = getAssignedPlaylistUseCase().first()
+                if (!isActive) return@launch
+
+                when (playlistResult) {
+                    is NetworkResult.Success -> {
+                        fetchedPlaylist = playlistResult.data
+                        Log.d(TAG, "Stage A: Successfully retrieved playlist '${fetchedPlaylist?.name}' on attempt $playlistAttempt.")
+                        break
+                    }
+                    is NetworkResult.Error -> {
+                        val error = playlistResult.error
+                        if (error is NetworkError.DeviceRevoked) {
+                            handleRevocation(error)
+                            return@launch
+                        }
+
+                        Log.w(TAG, "Stage A: Fetch playlist attempt $playlistAttempt of $MAX_ATTEMPTS failed: ${error.message}")
+                        if (playlistAttempt >= MAX_ATTEMPTS) {
+                            Log.e(TAG, "Stage A: All $MAX_ATTEMPTS attempts to fetch playlist failed.")
+                            _uiState.update {
+                                it.copy(
+                                    isRecoveryMode = true,
+                                    recoveryTitle = "Unable to synchronize your content.",
+                                    recoveryMessage = "Failed to retrieve playlist after $MAX_ATTEMPTS attempts. Please contact Adveno support or continue showing existing ads.",
+                                    isAutoRetrying = false
+                                )
+                            }
+                            return@launch
+                        } else {
+                            playlistAttempt++
+                        }
+                    }
+                    is NetworkResult.Loading -> {}
+                }
             }
 
-            val playlistResult = getAssignedPlaylistUseCase().first()
-            if (!isActive) return@launch
-
-            val playlist: Playlist? = when (playlistResult) {
-                is NetworkResult.Success -> {
-                    playlistResult.data
-                }
-                is NetworkResult.Error -> {
-                    handleSyncError(playlistResult.error, step = "Retrieving playlist")
-                    return@launch
-                }
-                is NetworkResult.Loading -> {
-                    return@launch
-                }
-            }
-
-            // If playlist is null or empty, handle gracefully without crashing or acknowledging an empty revision
-            if (playlist == null || playlist.items.isEmpty()) {
-                Log.d(TAG, "Assigned playlist is null or empty. Retaining default playback fallback.")
+            val validPlaylist = fetchedPlaylist
+            if (validPlaylist == null || validPlaylist.items.isEmpty()) {
+                Log.d(TAG, "Assigned playlist is empty. Retaining default playback fallback.")
                 _uiState.update {
                     it.copy(
                         isSynced = true,
                         progress = 1.0f,
                         heading = "Synced!",
                         description = "Your advertisements are ready.",
+                        isRecoveryMode = false,
                         errorMessage = null,
-                        canRetry = false
+                        isAutoRetrying = false
                     )
                 }
                 return@launch
             }
 
             // -------------------------------------------------------------
-            // STEP 3: Download Media Files in Position Order
+            // STAGE B: Download Media Assets with Independent Retries
+            // Retry only failed downloads (max 3 attempts each); preserves completed files.
+            // Does NOT re-fetch playlist.
             // -------------------------------------------------------------
-            val sortedItems = playlist.items.sortedBy { it.position }
+            val sortedItems = validPlaylist.items.sortedBy { it.position }
             val totalItems = sortedItems.size
-            Log.d(TAG, "Step 3: Downloading $totalItems media assets in ascending order...")
+            Log.d(TAG, "Stage B: Downloading $totalItems media assets with independent retries...")
 
             for ((index, item) in sortedItems.withIndex()) {
                 if (!isActive) return@launch
@@ -178,47 +245,92 @@ class SyncingViewModel(
                 val media = item.media
                 val baseProgress = 0.20f + (index.toFloat() / totalItems) * 0.65f
 
-                _uiState.update {
-                    it.copy(
-                        progress = baseProgress,
-                        heading = "Syncing Ads...",
-                        description = "Downloading media ${index + 1} of $totalItems: ${media.name.ifBlank { "Asset" }}"
-                    )
+                // Check if already downloaded and valid to avoid redundant network traffic
+                val existingFile = mediaDownloader.getMediaFile(media)
+                if (existingFile != null && existingFile.exists() && existingFile.length() > 0L) {
+                    Log.d(TAG, "Stage B: Media ${media.id} (${media.name}) already cached on disk. Skipping download.")
+                    val completedItemProgress = 0.20f + ((index + 1).toFloat() / totalItems) * 0.65f
+                    _uiState.update { state -> state.copy(progress = completedItemProgress) }
+                    continue
                 }
 
-                try {
-                    val downloadedFile = mediaDownloader.downloadMedia(media) { bytesRead, totalBytes ->
-                        if (totalBytes > 0L) {
-                            val intraProgress = (bytesRead.toFloat() / totalBytes) * (0.65f / totalItems)
-                            val currentTotalProgress = (baseProgress + intraProgress).coerceIn(0.20f, 0.85f)
-                            _uiState.update { state -> state.copy(progress = currentTotalProgress) }
-                        }
-                    }
-                    Log.d(TAG, "Media ${media.id} downloaded successfully: ${downloadedFile.name} (${downloadedFile.length()} bytes)")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed downloading media ${media.id} (${media.name})", e)
-                    val errorDescription = "Failed to download media (${media.name.ifBlank { "asset" }}). Please check connection and try again."
+                var downloadAttempt = 1
+                var downloadSuccess = false
+
+                while (downloadAttempt <= MAX_ATTEMPTS && isActive) {
                     _uiState.update {
                         it.copy(
-                            heading = "Download Failed",
-                            description = errorDescription,
-                            errorMessage = errorDescription,
-                            canRetry = true
+                            progress = baseProgress,
+                            heading = "Syncing Ads...",
+                            description = if (downloadAttempt == 1) {
+                                "Downloading media ${index + 1} of $totalItems: ${media.name.ifBlank { "Asset" }}"
+                            } else {
+                                "Downloading media ${index + 1} of $totalItems (Attempt $downloadAttempt of $MAX_ATTEMPTS): ${media.name.ifBlank { "Asset" }}"
+                            },
+                            currentAttempt = downloadAttempt,
+                            maxAttempts = MAX_ATTEMPTS,
+                            isAutoRetrying = downloadAttempt > 1,
+                            isRecoveryMode = false
                         )
                     }
+
+                    if (downloadAttempt > 1) {
+                        delay(RETRY_DELAY_MS)
+                    }
+
+                    if (!isActive) return@launch
+
+                    try {
+                        val downloadedFile = mediaDownloader.downloadMedia(media) { bytesRead, totalBytes ->
+                            if (totalBytes > 0L) {
+                                val intraProgress = (bytesRead.toFloat() / totalBytes) * (0.65f / totalItems)
+                                val currentTotalProgress = (baseProgress + intraProgress).coerceIn(0.20f, 0.85f)
+                                _uiState.update { state -> state.copy(progress = currentTotalProgress) }
+                            }
+                        }
+                        Log.d(TAG, "Stage B: Media ${media.id} downloaded successfully on attempt $downloadAttempt (${downloadedFile.length()} bytes).")
+                        downloadSuccess = true
+                        break
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Stage B: Download attempt $downloadAttempt of $MAX_ATTEMPTS failed for media ${media.id} (${media.name}): ${e.message}")
+                        if (downloadAttempt >= MAX_ATTEMPTS) {
+                            Log.e(TAG, "Stage B: Maximum download attempts reached for media ${media.id}.")
+                            _uiState.update {
+                                it.copy(
+                                    isRecoveryMode = true,
+                                    recoveryTitle = "Unable to synchronize your content.",
+                                    recoveryMessage = "Failed to download media (${media.name.ifBlank { "Asset" }}). Please contact Adveno support or continue showing existing ads.",
+                                    isAutoRetrying = false
+                                )
+                            }
+                            return@launch
+                        } else {
+                            downloadAttempt++
+                        }
+                    }
+                }
+
+                if (!downloadSuccess) {
                     return@launch
                 }
             }
 
             // -------------------------------------------------------------
-            // STEP 4: Validate and Prepare In-Memory Playlist State
+            // STAGE C: Apply Playlist and Acknowledge
+            // Validate all files, APPLY playlist locally to ActivePlaylistStorage FIRST.
+            // Then attempt backend acknowledgment with max 3 retries.
+            // CRITICAL: If acknowledgment fails, do NOT block and do NOT rollback!
+            // Continue directly to Ads Running playback.
             // -------------------------------------------------------------
-            Log.d(TAG, "Step 4: Validating downloaded assets and preparing active playlist...")
+            Log.d(TAG, "Stage C: Validating downloaded assets and preparing active playlist...")
             _uiState.update {
                 it.copy(
                     progress = 0.88f,
                     heading = "Syncing Ads...",
-                    description = "Preparing playlist..."
+                    description = "Preparing playlist...",
+                    currentAttempt = 1,
+                    isAutoRetrying = false,
+                    isRecoveryMode = false
                 )
             }
 
@@ -229,81 +341,103 @@ class SyncingViewModel(
                     Log.e(TAG, errorMsg)
                     _uiState.update {
                         it.copy(
-                            heading = "Validation Failed",
-                            description = errorMsg,
-                            errorMessage = errorMsg,
-                            canRetry = true
+                            isRecoveryMode = true,
+                            recoveryTitle = "Unable to synchronize your content.",
+                            recoveryMessage = "Media file for ${item.media.name} could not be loaded. Please contact Adveno support or continue showing existing ads.",
+                            isAutoRetrying = false
                         )
                     }
                     return@launch
                 }
-                item.copy(
-                    media = item.media.copy(localFilePath = localFile.absolutePath)
-                )
+                item.copy(media = item.media.copy(localFilePath = localFile.absolutePath))
             }
 
-            val preparedPlaylist = playlist.copy(items = preparedItems)
+            // CRITICAL: Apply the newly verified playlist locally FIRST
+            val preparedPlaylist = validPlaylist.copy(items = preparedItems)
             activePlaylistStorage?.setPlaylist(preparedPlaylist)
-            Log.d(TAG, "Prepared playlist successfully stored in-memory: ${preparedPlaylist.name} (version ${preparedPlaylist.version})")
+            Log.d(TAG, "Stage C: Prepared playlist successfully applied locally: ${preparedPlaylist.name} (version ${preparedPlaylist.version})")
 
-            // -------------------------------------------------------------
-            // STEP 5: Acknowledge Synchronization (POST /api/v1/screens/sync-acknowledgments)
-            // -------------------------------------------------------------
-            val revisionToAcknowledge = desiredRevision ?: playlist.version
-            Log.d(TAG, "Step 5: Acknowledging applied revision $revisionToAcknowledge with backend...")
-            _uiState.update {
-                it.copy(
-                    progress = 0.95f,
-                    heading = "Syncing Ads...",
-                    description = "Confirming synchronization..."
-                )
-            }
+            // Send acknowledgment with up to 3 automatic retries
+            val revisionToAcknowledge = desiredRevision ?: validPlaylist.version
+            var ackAttempt = 1
+            var ackSucceeded = false
 
-            val ackResult = acknowledgeSyncUseCase(revisionToAcknowledge).first()
-            if (!isActive) return@launch
-
-            when (ackResult) {
-                is NetworkResult.Success -> {
-                    Log.d(TAG, "Revision $revisionToAcknowledge acknowledged successfully.")
+            while (ackAttempt <= MAX_ATTEMPTS && isActive) {
+                _uiState.update {
+                    it.copy(
+                        progress = (0.90f + (ackAttempt * 0.03f)).coerceAtMost(0.99f),
+                        heading = "Syncing Ads...",
+                        description = if (ackAttempt == 1) {
+                            "Confirming synchronization..."
+                        } else {
+                            "Confirming synchronization (Attempt $ackAttempt of $MAX_ATTEMPTS)..."
+                        },
+                        currentAttempt = ackAttempt,
+                        maxAttempts = MAX_ATTEMPTS,
+                        isAutoRetrying = ackAttempt > 1,
+                        isRecoveryMode = false
+                    )
                 }
-                is NetworkResult.Error -> {
-                    Log.w(TAG, "Acknowledgment failed: ${ackResult.error.message}")
-                    // Downloaded files and prepared playlist remain intact so the user can safely retry acknowledgment
-                    val ackErrorMsg = "Failed to confirm synchronization with server. Please try again."
-                    _uiState.update {
-                        it.copy(
-                            heading = "Confirmation Failed",
-                            description = ackErrorMsg,
-                            errorMessage = ackErrorMsg,
-                            canRetry = true
-                        )
+
+                if (ackAttempt > 1) {
+                    delay(RETRY_DELAY_MS)
+                }
+
+                if (!isActive) return@launch
+
+                val ackResult = acknowledgeSyncUseCase(revisionToAcknowledge).first()
+                if (!isActive) return@launch
+
+                when (ackResult) {
+                    is NetworkResult.Success -> {
+                        Log.d(TAG, "Stage C: Revision $revisionToAcknowledge successfully acknowledged on attempt $ackAttempt.")
+                        activePlaylistStorage?.setPendingAcknowledgment(null)
+                        ackSucceeded = true
+                        break
                     }
-                    return@launch
-                }
-                is NetworkResult.Loading -> {
-                    return@launch
+                    is NetworkResult.Error -> {
+                        val error = ackResult.error
+                        if (error is NetworkError.DeviceRevoked) {
+                            handleRevocation(error)
+                            return@launch
+                        }
+
+                        Log.w(TAG, "Stage C: Acknowledgment attempt $ackAttempt of $MAX_ATTEMPTS failed: ${error.message}")
+                        if (ackAttempt < MAX_ATTEMPTS) {
+                            ackAttempt++
+                        } else {
+                            // CRITICAL RULE: Acknowledgment retries exhausted.
+                            // DO NOT show blocking recovery screen and DO NOT rollback applied playlist.
+                            // Record pending acknowledgment for background retry and continue to playback!
+                            Log.w(TAG, "Stage C: Backend acknowledgment exhausted all $MAX_ATTEMPTS attempts. Storing pending acknowledgment revision $revisionToAcknowledge and continuing to Ads playback.")
+                            activePlaylistStorage?.setPendingAcknowledgment(revisionToAcknowledge)
+                            break
+                        }
+                    }
+                    is NetworkResult.Loading -> {}
                 }
             }
 
             // -------------------------------------------------------------
-            // STEP 6: Synchronization Completed Successfully
+            // COMPLETION: Transition directly to Synced state
             // -------------------------------------------------------------
-            Log.d(TAG, "Step 6: Synchronization completed successfully.")
+            Log.d(TAG, "Synchronization complete. Content active. Navigating to Ads playback.")
             _uiState.update {
                 it.copy(
                     isSynced = true,
                     progress = 1.0f,
                     heading = "Synced!",
                     description = "Your advertisements are ready.",
+                    isRecoveryMode = false,
                     errorMessage = null,
-                    canRetry = false
+                    isAutoRetrying = false
                 )
             }
         }
     }
 
     /**
-     * Retries synchronization after a network, download, or acknowledgment failure.
+     * Retries synchronization from beginning when user triggers it from the Recovery Screen.
      */
     fun retry() {
         syncJob?.cancel()
@@ -311,49 +445,17 @@ class SyncingViewModel(
         startSynchronization()
     }
 
-    /**
-     * Evaluates errors, distinguishes between credential revocation and transient failures,
-     * and sets actionable UI state.
-     */
-    private fun handleSyncError(error: NetworkError, step: String) {
-        when (error) {
-            is NetworkError.DeviceRevoked -> {
-                Log.w(TAG, "Device credential revoked during $step (${error.errorCode}). Clearing credentials.")
-                credentialStorage?.clearCredential()
-                activePlaylistStorage?.clearPlaylist()
-                _uiState.update {
-                    it.copy(
-                        isRevoked = true,
-                        errorMessage = "Screen credential has been revoked or disconnected.",
-                        canRetry = false
-                    )
-                }
-            }
-            is NetworkError.NetworkFailure -> {
-                Log.w(TAG, "Network failure during $step: ${error.message}")
-                val message = "Unable to connect to server. Please check your internet connection."
-                _uiState.update {
-                    it.copy(
-                        heading = "Sync Paused",
-                        description = message,
-                        errorMessage = message,
-                        canRetry = true
-                    )
-                }
-            }
-            else -> {
-                val message = error.message.takeIf { it.isNotBlank() }
-                    ?: "Synchronization failed during $step. Please try again."
-                Log.e(TAG, "Error during $step: $message")
-                _uiState.update {
-                    it.copy(
-                        heading = "Sync Paused",
-                        description = message,
-                        errorMessage = message,
-                        canRetry = true
-                    )
-                }
-            }
+    private fun handleRevocation(error: NetworkError.DeviceRevoked) {
+        Log.w(TAG, "Device credential revoked (${error.errorCode}). Clearing credentials.")
+        credentialStorage?.clearCredential()
+        activePlaylistStorage?.clearPlaylist()
+        _uiState.update {
+            it.copy(
+                isRevoked = true,
+                errorMessage = "Screen credential has been revoked or disconnected.",
+                isRecoveryMode = false,
+                isAutoRetrying = false
+            )
         }
     }
 
@@ -367,9 +469,5 @@ class SyncingViewModel(
         super.onCleared()
         syncJob?.cancel()
         syncJob = null
-    }
-
-    companion object {
-        private const val TAG = "SyncingViewModel"
     }
 }

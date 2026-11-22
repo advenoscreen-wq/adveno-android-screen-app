@@ -14,6 +14,9 @@ class ActivePlaylistStorage {
     private val _currentPlaylist = MutableStateFlow<Playlist?>(null)
     val currentPlaylist: StateFlow<Playlist?> = _currentPlaylist.asStateFlow()
 
+    private val _pendingAcknowledgmentRevision = MutableStateFlow<Int?>(null)
+    val pendingAcknowledgmentRevision: StateFlow<Int?> = _pendingAcknowledgmentRevision.asStateFlow()
+
     fun setPlaylist(playlist: Playlist?) {
         _currentPlaylist.value = playlist
     }
@@ -21,6 +24,12 @@ class ActivePlaylistStorage {
     fun getPlaylist(): Playlist? {
         return _currentPlaylist.value
     }
+
+    fun setPendingAcknowledgment(revision: Int?) {
+        _pendingAcknowledgmentRevision.value = revision
+    }
+
+    fun getPendingAcknowledgment(): Int? = _pendingAcknowledgmentRevision.value
 
     fun hasUsablePlaylist(): Boolean {
         val playlist = _currentPlaylist.value
@@ -31,6 +40,7 @@ class ActivePlaylistStorage {
 
     fun clearPlaylist() {
         _currentPlaylist.value = null
+        _pendingAcknowledgmentRevision.value = null
     }
 }
 

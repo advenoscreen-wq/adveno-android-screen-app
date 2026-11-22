@@ -52,10 +52,12 @@ import com.adveno.tv.presentation.components.TvMediaSyncIndicator
 import com.adveno.tv.presentation.components.TvProgressBar
 import com.adveno.tv.presentation.theme.AdvenoBackground
 import com.adveno.tv.presentation.theme.AdvenoDimensions
+import com.adveno.tv.presentation.theme.AdvenoSecondary
 import com.adveno.tv.presentation.theme.AdvenoSuccess
 import com.adveno.tv.presentation.theme.AdvenoTextPrimary
 import com.adveno.tv.presentation.theme.AdvenoTextSecondary
 import com.adveno.tv.presentation.theme.AdvenoTheme
+import com.adveno.tv.presentation.theme.AdvenoWarning
 
 /**
  * Stateful entry point for the "Ads Synchronization" screen.
@@ -99,22 +101,19 @@ fun SyncingScreen(
     SyncingScreenContent(
         uiState = uiState,
         onRetryClick = { viewModel.retry() },
+        onShowAdsClick = onNavigateToAdsRunning,
         modifier = modifier
     )
 }
 
 /**
- * Pure stateless Composable rendering the Ads Synchronization UI.
- *
- * Responsiveness:
- * - Landscape (16:9): Centered branding, animated floating media card stack,
- *   crisp title/subtitle, and horizontal progress bar with percentage indicator.
- * - Portrait (9:16): Proportional vertical stack tailored for vertical signage displays.
+ * Pure stateless Composable rendering the Ads Synchronization UI and Recovery Screen.
  */
 @Composable
 fun SyncingScreenContent(
     uiState: SyncingUiState,
     onRetryClick: () -> Unit = {},
+    onShowAdsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val entranceAlpha = remember { Animatable(0f) }
@@ -147,8 +146,12 @@ fun SyncingScreenContent(
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            if (uiState.isSynced) Color(0x3222C55E) else Color(0x2822D3EE),
-                            if (uiState.isSynced) Color(0x1815803D) else Color(0x143478F6),
+                            if (uiState.isSynced) Color(0x3222C55E)
+                            else if (uiState.isRecoveryMode) Color(0x28F59E0B)
+                            else Color(0x2822D3EE),
+                            if (uiState.isSynced) Color(0x1815803D)
+                            else if (uiState.isRecoveryMode) Color(0x18B45309)
+                            else Color(0x143478F6),
                             Color.Transparent
                         ),
                         center = Offset(size.width * 0.85f, size.height * 0.85f),
@@ -212,7 +215,7 @@ fun SyncingScreenContent(
 
                 Spacer(modifier = Modifier.height(if (isPortrait) 42.dp else 30.dp))
 
-                // Central Animated Media Sync Visual (Floating cards -> Green Checkmark on Synced)
+                // Central Animated Media Sync Visual
                 TvMediaSyncIndicator(
                     isSynced = uiState.isSynced,
                     indicatorSize = indicatorSize,
@@ -221,42 +224,23 @@ fun SyncingScreenContent(
 
                 Spacer(modifier = Modifier.height(if (isPortrait) 36.dp else 24.dp))
 
-                // Heading: Smoothly transitions from "Syncing Ads..." to "Synced!"
-                AnimatedContent(
-                    targetState = uiState.heading,
-                    transitionSpec = {
-                        (fadeIn(animationSpec = tween(400)) + slideInVertically(animationSpec = tween(400)) { -15 })
-                            .togetherWith(
-                                fadeOut(animationSpec = tween(250)) + slideOutVertically(animationSpec = tween(250)) { 15 }
-                            )
-                    },
-                    label = "SyncHeadingTransition"
-                ) { headingText ->
+                if (uiState.isRecoveryMode) {
+                    // =========================================================
+                    // RECOVERY MODE UI: Shown when 3 retry attempts are exhausted
+                    // =========================================================
                     Text(
-                        text = headingText,
+                        text = uiState.recoveryTitle,
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Bold,
                         color = AdvenoTextPrimary,
-                        fontSize = if (isPortrait) 34.sp else 36.sp,
+                        fontSize = if (isPortrait) 32.sp else 34.sp,
                         textAlign = TextAlign.Center
                     )
-                }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                // Description: Smoothly transitions from "Downloading..." to "Your advertisements are ready."
-                AnimatedContent(
-                    targetState = uiState.description,
-                    transitionSpec = {
-                        (fadeIn(animationSpec = tween(500, delayMillis = 150)) + slideInVertically(animationSpec = tween(500, delayMillis = 150)) { 15 })
-                            .togetherWith(
-                                fadeOut(animationSpec = tween(200))
-                            )
-                    },
-                    label = "SyncDescriptionTransition"
-                ) { descText ->
                     Text(
-                        text = descText,
+                        text = uiState.recoveryMessage,
                         style = MaterialTheme.typography.headlineMedium,
                         color = AdvenoTextSecondary,
                         fontSize = 18.sp,
@@ -265,45 +249,122 @@ fun SyncingScreenContent(
                             .fillMaxWidth()
                             .padding(horizontal = if (isPortrait) 20.dp else 48.dp)
                     )
-                }
 
-                Spacer(modifier = Modifier.height(if (isPortrait) 36.dp else 28.dp))
-
-                // Horizontal Progress Bar & Dynamic Percentage Indicator
-                Row(
-                    modifier = Modifier
-                        .widthIn(max = 520.dp)
-                        .fillMaxWidth(if (isPortrait) 0.88f else 0.52f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    TvProgressBar(
-                        progress = uiState.progress,
-                        isSynced = uiState.isSynced,
-                        modifier = Modifier.weight(1f),
-                        height = 14.dp
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = uiState.percentageText,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = if (uiState.isSynced) AdvenoSuccess else AdvenoTextPrimary,
-                        fontSize = 17.sp,
-                        modifier = Modifier.widthIn(min = 44.dp)
+                        text = "Need assistance? Contact Adveno support at support@adveno.com",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = AdvenoWarning,
+                        textAlign = TextAlign.Center
                     )
-                }
 
-                // Actionable TV D-pad focusable Retry button on failure
-                if (uiState.canRetry) {
-                    Spacer(modifier = Modifier.height(28.dp))
-                    TvButton(
-                        text = "Retry",
-                        onClick = onRetryClick,
-                        modifier = Modifier.widthIn(min = 180.dp)
-                    )
+                    Spacer(modifier = Modifier.height(32.dp))
+
+                    // TV Action buttons: Show Ads (continues with cached/default playlist) and Retry Sync
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TvButton(
+                            text = "Show Ads",
+                            onClick = onShowAdsClick,
+                            modifier = Modifier.widthIn(min = 180.dp)
+                        )
+                        TvButton(
+                            text = "Retry Sync",
+                            onClick = onRetryClick,
+                            modifier = Modifier.widthIn(min = 180.dp)
+                        )
+                    }
+                } else {
+                    // =========================================================
+                    // NORMAL PROGRESS UI: Live download, progress bar & retries
+                    // =========================================================
+                    AnimatedContent(
+                        targetState = uiState.heading,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(400)) + slideInVertically(animationSpec = tween(400)) { -15 })
+                                .togetherWith(
+                                    fadeOut(animationSpec = tween(250)) + slideOutVertically(animationSpec = tween(250)) { 15 }
+                                )
+                        },
+                        label = "SyncHeadingTransition"
+                    ) { headingText ->
+                        Text(
+                            text = headingText,
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = AdvenoTextPrimary,
+                            fontSize = if (isPortrait) 34.sp else 36.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    AnimatedContent(
+                        targetState = uiState.description,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(500, delayMillis = 150)) + slideInVertically(animationSpec = tween(500, delayMillis = 150)) { 15 })
+                                .togetherWith(
+                                    fadeOut(animationSpec = tween(200))
+                                )
+                        },
+                        label = "SyncDescriptionTransition"
+                    ) { descText ->
+                        Text(
+                            text = descText,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = AdvenoTextSecondary,
+                            fontSize = 18.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = if (isPortrait) 20.dp else 48.dp)
+                        )
+                    }
+
+                    // Attempt Indicator during automatic retries
+                    if (uiState.isAutoRetrying) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = uiState.attemptIndicatorText,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = AdvenoSecondary,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(if (isPortrait) 36.dp else 28.dp))
+
+                    // Horizontal Progress Bar & Percentage
+                    Row(
+                        modifier = Modifier
+                            .widthIn(max = 520.dp)
+                            .fillMaxWidth(if (isPortrait) 0.88f else 0.52f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        TvProgressBar(
+                            progress = uiState.progress,
+                            isSynced = uiState.isSynced,
+                            modifier = Modifier.weight(1f),
+                            height = 14.dp
+                        )
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Text(
+                            text = uiState.percentageText,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (uiState.isSynced) AdvenoSuccess else AdvenoTextPrimary,
+                            fontSize = 17.sp,
+                            modifier = Modifier.widthIn(min = 44.dp)
+                        )
+                    }
                 }
             }
         }
@@ -311,7 +372,7 @@ fun SyncingScreenContent(
 }
 
 // -----------------------------------------------------------------------------------------
-// Previews for Both Orientations and States
+// Previews
 // -----------------------------------------------------------------------------------------
 
 @Preview(name = "Landscape - Syncing 70%", widthDp = 960, heightDp = 540, showBackground = true)
@@ -320,6 +381,20 @@ fun SyncingLandscapePreview() {
     AdvenoTheme {
         SyncingScreenContent(
             uiState = SyncingUiState(isSynced = false, progress = 0.70f)
+        )
+    }
+}
+
+@Preview(name = "Landscape - Recovery Mode", widthDp = 960, heightDp = 540, showBackground = true)
+@Composable
+fun RecoveryModeLandscapePreview() {
+    AdvenoTheme {
+        SyncingScreenContent(
+            uiState = SyncingUiState(
+                isRecoveryMode = true,
+                recoveryTitle = "Unable to synchronize your content.",
+                recoveryMessage = "Failed to download media. Please contact Adveno support or continue showing existing ads."
+            )
         )
     }
 }
@@ -344,13 +419,16 @@ fun SyncingPortraitPreview() {
     }
 }
 
-@Preview(name = "Portrait - Synced 100%", widthDp = 540, heightDp = 960, showBackground = true)
+@Preview(name = "Portrait - Recovery Mode", widthDp = 540, heightDp = 960, showBackground = true)
 @Composable
-fun SyncedPortraitPreview() {
+fun RecoveryModePortraitPreview() {
     AdvenoTheme {
         SyncingScreenContent(
-            uiState = SyncingUiState(isSynced = true, progress = 1.0f)
+            uiState = SyncingUiState(
+                isRecoveryMode = true,
+                recoveryTitle = "Unable to synchronize your content.",
+                recoveryMessage = "Failed to retrieve playlist after 3 attempts. Please contact Adveno support or continue showing existing ads."
+            )
         )
     }
 }
-

@@ -262,17 +262,30 @@ fun ConnectingScreenContent(
                     )
                 }
 
-                // Error message and retry button when backend registration fails
-                if (uiState.errorMessage != null) {
+                // Attempt indicator during active loading
+                if (uiState.isLoading && !uiState.isConnected) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = uiState.attemptIndicatorText,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color(0xFF22D3EE),
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                // Error message and retry button when backend registration reaches maximum attempts
+                if (uiState.isMaxAttemptsReached && uiState.errorMessage != null) {
                     Spacer(modifier = Modifier.height(20.dp))
                     Text(
                         text = uiState.errorMessage ?: "",
                         color = Color(0xFFEF4444),
                         style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 24.dp)
                     )
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     TvButton(
                         text = "Retry Connection",
                         onClick = onRetryClick,
