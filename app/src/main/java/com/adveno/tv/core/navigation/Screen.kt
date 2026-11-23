@@ -27,6 +27,10 @@ sealed interface Screen {
         override val route: String = "syncing"
     }
 
+    data object NoAds : Screen {
+        override val route: String = "no_ads"
+    }
+
     data object AdsRunning : Screen {
         override val route: String = "ads_running"
     }

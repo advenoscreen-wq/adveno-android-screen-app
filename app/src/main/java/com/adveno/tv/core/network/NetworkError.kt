@@ -30,24 +30,33 @@ sealed class NetworkError(open val message: String) {
 
     /**
      * Network connectivity failures, socket timeouts, or DNS issues.
+     * Sanitizes messages so raw hostnames and technical exceptions are never exposed to the UI.
      */
     data class NetworkFailure(
         val cause: Throwable,
-        override val message: String = cause.localizedMessage ?: "Network connection failed"
+        override val message: String = NetworkExceptionClassifier.USER_FRIENDLY_NETWORK_ERROR
     ) : NetworkError(message)
 
     /**
      * JSON payload deserialization failure or schema mismatch.
      */
     data class SerializationError(
-        override val message: String
+        override val message: String = "Unable to process server response."
     ) : NetworkError(message)
 
     /**
      * Fallback for unforeseen errors.
      */
     data class Unknown(
-        override val message: String = "An unexpected error occurred"
+        override val message: String = "An unexpected error occurred",
+        val cause: Throwable? = null
     ) : NetworkError(message)
+
+    /**
+     * Helper to determine whether this error represents an internet/transport disconnection.
+     */
+    val isNetworkConnectionIssue: Boolean
+        get() = this is NetworkFailure ||
+                (this is Unknown && NetworkExceptionClassifier.isNetworkException(cause))
 }
 

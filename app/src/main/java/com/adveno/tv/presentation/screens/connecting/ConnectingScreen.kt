@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import com.adveno.tv.R
 import com.adveno.tv.presentation.components.TvButton
 import com.adveno.tv.presentation.components.TvConnectingIndicator
+import com.adveno.tv.presentation.components.TvNoInternetModal
 import com.adveno.tv.presentation.theme.AdvenoBackground
 import com.adveno.tv.presentation.theme.AdvenoDimensions
 import com.adveno.tv.presentation.theme.AdvenoTextPrimary
@@ -93,6 +94,7 @@ fun ConnectingScreen(
     ConnectingScreenContent(
         uiState = uiState,
         onRetryClick = { viewModel.retry() },
+        onRetryConnection = { viewModel.retryConnectionFromModal() },
         modifier = modifier
     )
 }
@@ -110,6 +112,7 @@ fun ConnectingScreen(
 fun ConnectingScreenContent(
     uiState: ConnectingUiState,
     onRetryClick: () -> Unit = {},
+    onRetryConnection: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val entranceAlpha = remember { Animatable(0f) }
@@ -262,18 +265,6 @@ fun ConnectingScreenContent(
                     )
                 }
 
-                // Attempt indicator during active loading
-                if (uiState.isLoading && !uiState.isConnected) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = uiState.attemptIndicatorText,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = Color(0xFF22D3EE),
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center
-                    )
-                }
-
                 // Error message and retry button when backend registration reaches maximum attempts
                 if (uiState.isMaxAttemptsReached && uiState.errorMessage != null) {
                     Spacer(modifier = Modifier.height(20.dp))
@@ -294,6 +285,15 @@ fun ConnectingScreenContent(
                 }
             }
         }
+
+        // Overlay No Internet Connection modal when network is interrupted
+        TvNoInternetModal(
+            isVisible = uiState.isNoInternetModalVisible,
+            interruptedOperation = uiState.interruptedOperation,
+            statusMessage = uiState.noInternetStatusMessage,
+            isConnectionRestored = uiState.isConnectionRestored,
+            onRetryConnection = onRetryConnection
+        )
     }
 }
 

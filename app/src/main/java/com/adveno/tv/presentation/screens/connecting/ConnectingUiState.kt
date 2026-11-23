@@ -2,8 +2,8 @@ package com.adveno.tv.presentation.screens.connecting
 
 /**
  * UI State for the Pairing / Connecting screen.
- * Covers both the active "Connecting..." loading phase with retry tracking
- * and the "Connected!" success state on the same screen.
+ * Covers active connecting loading phase, 3-attempt retry loop,
+ * network disconnection modal state, and the "Connected!" success state.
  */
 data class ConnectingUiState(
     val brandName: String = "Adveno",
@@ -18,7 +18,11 @@ data class ConnectingUiState(
     } else {
         "Linking this screen to your Adveno account"
     },
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isNoInternetModalVisible: Boolean = false,
+    val interruptedOperation: String = "",
+    val noInternetStatusMessage: String? = null,
+    val isConnectionRestored: Boolean = false
 ) {
     val attemptIndicatorText: String
         get() = "Attempt $currentAttempt of $maxAttempts"

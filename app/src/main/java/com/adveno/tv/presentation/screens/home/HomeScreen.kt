@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.adveno.tv.R
 import com.adveno.tv.presentation.components.TvButton
+import com.adveno.tv.presentation.components.TvNoInternetModal
 import com.adveno.tv.presentation.theme.AdvenoBackground
 import com.adveno.tv.presentation.theme.AdvenoDimensions
 import com.adveno.tv.presentation.theme.AdvenoTextPrimary
@@ -72,6 +73,9 @@ fun HomeScreen(
                 onNavigateToAds = onNavigateToAds
             )
         },
+        onRetryConnection = {
+            viewModel.retryConnectionFromModal()
+        },
         modifier = modifier
     )
 }
@@ -88,6 +92,7 @@ fun HomeScreen(
 fun HomeScreenContent(
     uiState: HomeUiState,
     onActionButtonClick: () -> Unit,
+    onRetryConnection: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val buttonFocusRequester = remember { FocusRequester() }
@@ -206,6 +211,15 @@ fun HomeScreenContent(
                 )
             }
         }
+
+        // Common No Internet Connection Modal overlay
+        TvNoInternetModal(
+            isVisible = uiState.isNoInternetModalVisible,
+            interruptedOperation = uiState.interruptedOperation,
+            statusMessage = uiState.noInternetStatusMessage,
+            isConnectionRestored = uiState.isConnectionRestored,
+            onRetryConnection = onRetryConnection
+        )
     }
 }
 

@@ -21,26 +21,30 @@ class ViewModelFactory(
         return when {
             modelClass.isAssignableFrom(HomeViewModel::class.java) -> {
                 HomeViewModel(
-                    verifyCredentialUseCase = appContainer.verifyCredentialUseCase
+                    verifyCredentialUseCase = appContainer.verifyCredentialUseCase,
+                    networkMonitor = appContainer.networkMonitor
                 ) as T
             }
             modelClass.isAssignableFrom(ConnectViewModel::class.java) -> {
                 ConnectViewModel(
-                    createPairingSessionUseCase = appContainer.createPairingSessionUseCase
+                    createPairingSessionUseCase = appContainer.createPairingSessionUseCase,
+                    networkMonitor = appContainer.networkMonitor
                 ) as T
             }
             modelClass.isAssignableFrom(ScanToConnectViewModel::class.java) -> {
                 ScanToConnectViewModel(
                     pollPairingStatusUseCase = appContainer.pollPairingStatusUseCase,
                     createPairingSessionUseCase = appContainer.createPairingSessionUseCase,
-                    sessionStorage = appContainer.sessionStorage
+                    sessionStorage = appContainer.sessionStorage,
+                    networkMonitor = appContainer.networkMonitor
                 ) as T
             }
             modelClass.isAssignableFrom(ConnectingViewModel::class.java) -> {
                 ConnectingViewModel(
                     registerNewScreenUseCase = appContainer.registerNewScreenUseCase,
                     issueReconnectCredentialUseCase = appContainer.issueReconnectCredentialUseCase,
-                    sessionStorage = appContainer.sessionStorage
+                    sessionStorage = appContainer.sessionStorage,
+                    networkMonitor = appContainer.networkMonitor
                 ) as T
             }
             modelClass.isAssignableFrom(SyncingViewModel::class.java) -> {
@@ -50,7 +54,8 @@ class ViewModelFactory(
                     acknowledgeSyncUseCase = appContainer.acknowledgeSyncUseCase,
                     mediaDownloader = appContainer.mediaDownloader,
                     activePlaylistStorage = appContainer.activePlaylistStorage,
-                    credentialStorage = appContainer.credentialStorage
+                    credentialStorage = appContainer.credentialStorage,
+                    networkMonitor = appContainer.networkMonitor
                 ) as T
             }
             modelClass.isAssignableFrom(AdsRunningViewModel::class.java) -> {

@@ -9,5 +9,9 @@ data class HomeUiState(
     val subtitle: String = "Digital Signage & Screen Management",
     val buttonText: String = "Start Connecting",
     val isConnecting: Boolean = false,
-    val isCredentialValid: Boolean = false
+    val isCredentialValid: Boolean = false,
+    val isNoInternetModalVisible: Boolean = false,
+    val interruptedOperation: String = "",
+    val noInternetStatusMessage: String? = null,
+    val isConnectionRestored: Boolean = false
 )

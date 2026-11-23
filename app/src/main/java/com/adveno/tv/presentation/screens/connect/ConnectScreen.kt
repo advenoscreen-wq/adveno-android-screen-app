@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.adveno.tv.R
 import com.adveno.tv.presentation.components.TvButton
+import com.adveno.tv.presentation.components.TvNoInternetModal
 import com.adveno.tv.presentation.theme.AdvenoBackground
 import com.adveno.tv.presentation.theme.AdvenoDimensions
 import com.adveno.tv.presentation.theme.AdvenoTextPrimary
@@ -74,6 +75,9 @@ fun ConnectScreen(
         onReconnectClick = {
             viewModel.onReconnectSelected(onNavigate = onNavigateToReconnect)
         },
+        onRetryConnection = {
+            viewModel.retryConnectionFromModal()
+        },
         modifier = modifier
     )
 }
@@ -90,6 +94,7 @@ fun ConnectScreenContent(
     uiState: ConnectUiState,
     onNewScreenClick: () -> Unit,
     onReconnectClick: () -> Unit,
+    onRetryConnection: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Initial focus requester for the primary action button (New Screen)
@@ -305,6 +310,15 @@ fun ConnectScreenContent(
                 }
             }
         }
+
+        // Common No Internet Connection Modal overlay
+        TvNoInternetModal(
+            isVisible = uiState.isNoInternetModalVisible,
+            interruptedOperation = uiState.interruptedOperation,
+            statusMessage = uiState.noInternetStatusMessage,
+            isConnectionRestored = uiState.isConnectionRestored,
+            onRetryConnection = onRetryConnection
+        )
     }
 }
 

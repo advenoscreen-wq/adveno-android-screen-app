@@ -1,11 +1,11 @@
 package com.adveno.tv
 
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,6 +21,7 @@ import com.adveno.tv.presentation.screens.connecting.ConnectingScreen
 import com.adveno.tv.presentation.screens.connecting.ConnectingViewModel
 import com.adveno.tv.presentation.screens.home.HomeScreen
 import com.adveno.tv.presentation.screens.home.HomeViewModel
+import com.adveno.tv.presentation.screens.noads.NoAdsScreen
 import com.adveno.tv.presentation.screens.scan.ScanToConnectScreen
 import com.adveno.tv.presentation.screens.scan.ScanToConnectViewModel
 import com.adveno.tv.presentation.screens.syncing.SyncingScreen
@@ -54,7 +55,11 @@ class MainActivity : ComponentActivity() {
                                 currentScreen = Screen.ConnectScreen
                             },
                             onNavigateToAds = {
-                                currentScreen = Screen.AdsRunning
+                                currentScreen = if (syncingViewModel.hasLocalAds()) {
+                                    Screen.AdsRunning
+                                } else {
+                                    Screen.NoAds
+                                }
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -93,6 +98,8 @@ class MainActivity : ComponentActivity() {
                                 currentScreen = Screen.ScanToConnect
                             },
                             onNavigateToSync = {
+                                syncingViewModel.reset()
+                                syncingViewModel.setManualSyncFromAds(false)
                                 currentScreen = Screen.Syncing
                             },
                             modifier = Modifier.fillMaxSize()
@@ -102,12 +109,40 @@ class MainActivity : ComponentActivity() {
                         SyncingScreen(
                             viewModel = syncingViewModel,
                             onBackClick = {
-                                currentScreen = Screen.Connecting
+                                currentScreen = if (syncingViewModel.hasLocalAds()) Screen.AdsRunning else Screen.Connecting
                             },
                             onNavigateToAdsRunning = {
                                 currentScreen = Screen.AdsRunning
                             },
+                            onNavigateToNoAds = {
+                                currentScreen = Screen.NoAds
+                            },
+                            onReturnToAdsRunning = {
+                                currentScreen = Screen.AdsRunning
+                            },
                             onNavigateToStartConnecting = {
+                                currentScreen = Screen.StartConnecting
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    Screen.NoAds -> {
+                        val adsRunningState by adsRunningViewModel.uiState.collectAsState()
+                        NoAdsScreen(
+                            onSyncClick = {
+                                syncingViewModel.reset()
+                                syncingViewModel.setManualSyncFromAds(false)
+                                currentScreen = Screen.Syncing
+                            },
+                            onLogoutClick = {
+                                adsRunningViewModel.logout(
+                                    onSuccess = {
+                                        currentScreen = Screen.StartConnecting
+                                    }
+                                )
+                            },
+                            isLoggingOut = adsRunningState.isLoggingOut,
+                            onBackClick = {
                                 currentScreen = Screen.StartConnecting
                             },
                             modifier = Modifier.fillMaxSize()
@@ -121,6 +156,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onSyncClick = {
                                 syncingViewModel.reset()
+                                syncingViewModel.setManualSyncFromAds(true)
                                 currentScreen = Screen.Syncing
                             },
                             modifier = Modifier.fillMaxSize()

@@ -91,23 +91,20 @@ class AdsRunningViewModel(
 
     private fun resolveInitialPlaylist(): List<AdItem> {
         val initialPlaylist = activePlaylistStorage?.getPlaylist()
-        val mapped = mapPlaylistToAdItems(initialPlaylist)
-        return if (mapped.isNotEmpty()) mapped else dummyFallbackPlaylist
+        return mapPlaylistToAdItems(initialPlaylist)
     }
 
     /**
      * Observes ActivePlaylistStorage for updates (e.g. after a manual or automatic Sync).
-     * Automatically applies new playlists without restarting the application.
+     * Automatically applies new Ads without restarting the application or interrupting if invalid.
      */
     private fun observeActivePlaylistStorage() {
         viewModelScope.launch {
             activePlaylistStorage?.currentPlaylist?.collect { playlist ->
                 val mapped = mapPlaylistToAdItems(playlist)
-                val targetList = if (mapped.isNotEmpty()) mapped else dummyFallbackPlaylist
-
-                if (activeMediaList != targetList) {
-                    Log.d(TAG, "New playlist detected (${targetList.size} items). Switching playback.")
-                    activeMediaList = targetList
+                if (mapped.isNotEmpty() && activeMediaList != mapped) {
+                    Log.d(TAG, "New Ads detected (${mapped.size} items). Switching playback.")
+                    activeMediaList = mapped
                     currentIndex = 0
                     adPlaybackJob?.cancel()
                     _uiState.update {
@@ -329,8 +326,9 @@ class AdsRunningViewModel(
                             onSuccess()
                         }
                         is NetworkResult.Error -> {
-                            when (val err = result.error) {
-                                is NetworkError.DeviceRevoked -> {
+                            val err = result.error
+                            when {
+                                err is NetworkError.DeviceRevoked -> {
                                     // Device already revoked or disconnected on backend; wipe local state and exit
                                     Log.d(TAG, "Device was already revoked (${err.errorCode}). Wiping local data.")
                                     clearAllLocalData()
@@ -338,7 +336,7 @@ class AdsRunningViewModel(
                                     reset()
                                     onSuccess()
                                 }
-                                is NetworkError.NetworkFailure -> {
+                                err.isNetworkConnectionIssue -> {
                                     val errorMsg = "Unable to logout. Please check your internet connection and try again."
                                     Log.w(TAG, errorMsg)
                                     _uiState.update {

@@ -14,11 +14,21 @@ object PlaylistMapper {
     fun toDomain(response: AssignedScreenPlaylistResponse?): Playlist? {
         if (response == null) return null
 
+        val playlistId = response.id ?: response.playlist?.id
+        val playlistName = response.name ?: response.playlist?.name
+        val description = response.description ?: response.playlist?.description
+        val version = if (response.version != 0) response.version else response.playlist?.version ?: 0
+
+        // If no playlist information or no items are assigned, return null as a valid empty state
+        if (playlistId.isNullOrBlank() || playlistName.isNullOrBlank() || response.items.isEmpty()) {
+            return null
+        }
+
         return Playlist(
-            id = response.id,
-            name = response.name,
-            description = response.description,
-            version = response.version,
+            id = playlistId,
+            name = playlistName,
+            description = description,
+            version = version,
             items = response.items
                 .sortedBy { it.position }
                 .map { toDomain(it) }

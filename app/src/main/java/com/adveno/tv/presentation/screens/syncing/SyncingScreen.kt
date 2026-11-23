@@ -49,10 +49,10 @@ import androidx.compose.ui.unit.sp
 import com.adveno.tv.R
 import com.adveno.tv.presentation.components.TvButton
 import com.adveno.tv.presentation.components.TvMediaSyncIndicator
+import com.adveno.tv.presentation.components.TvNoInternetModal
 import com.adveno.tv.presentation.components.TvProgressBar
 import com.adveno.tv.presentation.theme.AdvenoBackground
 import com.adveno.tv.presentation.theme.AdvenoDimensions
-import com.adveno.tv.presentation.theme.AdvenoSecondary
 import com.adveno.tv.presentation.theme.AdvenoSuccess
 import com.adveno.tv.presentation.theme.AdvenoTextPrimary
 import com.adveno.tv.presentation.theme.AdvenoTextSecondary
@@ -67,6 +67,8 @@ fun SyncingScreen(
     viewModel: SyncingViewModel,
     onBackClick: () -> Unit,
     onNavigateToAdsRunning: () -> Unit = {},
+    onNavigateToNoAds: () -> Unit = {},
+    onReturnToAdsRunning: () -> Unit = {},
     onNavigateToStartConnecting: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -90,11 +92,22 @@ fun SyncingScreen(
         }
     }
 
-    // When synchronization succeeds, wait briefly to present the Synced state, then navigate to Ads Running
+    // When manual sync from Ads playback fails, return cleanly to Ads playback without blocking
+    LaunchedEffect(uiState.isManualSyncFailed) {
+        if (uiState.isManualSyncFailed) {
+            onReturnToAdsRunning()
+        }
+    }
+
+    // When synchronization succeeds: navigate to AdsRunning if Ads exist, or NoAds if none assigned
     LaunchedEffect(uiState.isSynced) {
         if (uiState.isSynced) {
-            kotlinx.coroutines.delay(2000L)
-            onNavigateToAdsRunning()
+            kotlinx.coroutines.delay(1800L)
+            if (uiState.hasAdsAvailable) {
+                onNavigateToAdsRunning()
+            } else {
+                onNavigateToNoAds()
+            }
         }
     }
 
@@ -102,6 +115,7 @@ fun SyncingScreen(
         uiState = uiState,
         onRetryClick = { viewModel.retry() },
         onShowAdsClick = onNavigateToAdsRunning,
+        onRetryConnection = { viewModel.retryConnectionFromModal() },
         modifier = modifier
     )
 }
@@ -114,6 +128,7 @@ fun SyncingScreenContent(
     uiState: SyncingUiState,
     onRetryClick: () -> Unit = {},
     onShowAdsClick: () -> Unit = {},
+    onRetryConnection: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val entranceAlpha = remember { Animatable(0f) }
@@ -121,8 +136,6 @@ fun SyncingScreenContent(
 
     LaunchedEffect(Unit) {
         entranceAlpha.animateTo(1f, animationSpec = tween(durationMillis = 400))
-    }
-    LaunchedEffect(Unit) {
         entranceOffsetY.animateTo(0f, animationSpec = tween(durationMillis = 400))
     }
 
@@ -226,7 +239,7 @@ fun SyncingScreenContent(
 
                 if (uiState.isRecoveryMode) {
                     // =========================================================
-                    // RECOVERY MODE UI: Shown when 3 retry attempts are exhausted
+                    // RECOVERY MODE UI: Initial Setup Failure Recovery
                     // =========================================================
                     Text(
                         text = uiState.recoveryTitle,
@@ -261,18 +274,20 @@ fun SyncingScreenContent(
 
                     Spacer(modifier = Modifier.height(32.dp))
 
-                    // TV Action buttons: Show Ads (continues with cached/default playlist) and Retry Sync
+                    // TV Action buttons: Show Ads (if local Ads exist) and Sync Now
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(20.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        if (uiState.hasUsableLocalAds) {
+                            TvButton(
+                                text = "Show Ads",
+                                onClick = onShowAdsClick,
+                                modifier = Modifier.widthIn(min = 180.dp)
+                            )
+                        }
                         TvButton(
-                            text = "Show Ads",
-                            onClick = onShowAdsClick,
-                            modifier = Modifier.widthIn(min = 180.dp)
-                        )
-                        TvButton(
-                            text = "Retry Sync",
+                            text = "Sync Now",
                             onClick = onRetryClick,
                             modifier = Modifier.widthIn(min = 180.dp)
                         )
@@ -325,18 +340,6 @@ fun SyncingScreenContent(
                         )
                     }
 
-                    // Attempt Indicator during automatic retries
-                    if (uiState.isAutoRetrying) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = uiState.attemptIndicatorText,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = AdvenoSecondary,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-
                     Spacer(modifier = Modifier.height(if (isPortrait) 36.dp else 28.dp))
 
                     // Horizontal Progress Bar & Percentage
@@ -368,6 +371,15 @@ fun SyncingScreenContent(
                 }
             }
         }
+
+        // Overlay No Internet Connection modal when network is interrupted
+        TvNoInternetModal(
+            isVisible = uiState.isNoInternetModalVisible,
+            interruptedOperation = uiState.interruptedOperation,
+            statusMessage = uiState.noInternetStatusMessage,
+            isConnectionRestored = uiState.isConnectionRestored,
+            onRetryConnection = onRetryConnection
+        )
     }
 }
 
@@ -392,8 +404,9 @@ fun RecoveryModeLandscapePreview() {
         SyncingScreenContent(
             uiState = SyncingUiState(
                 isRecoveryMode = true,
-                recoveryTitle = "Unable to synchronize your content.",
-                recoveryMessage = "Failed to download media. Please contact Adveno support or continue showing existing ads."
+                hasUsableLocalAds = false,
+                recoveryTitle = "Unable to synchronize your Ads.",
+                recoveryMessage = "Failed to download Ads after multiple attempts. Please contact Adveno support or sync to retry."
             )
         )
     }
@@ -426,8 +439,9 @@ fun RecoveryModePortraitPreview() {
         SyncingScreenContent(
             uiState = SyncingUiState(
                 isRecoveryMode = true,
-                recoveryTitle = "Unable to synchronize your content.",
-                recoveryMessage = "Failed to retrieve playlist after 3 attempts. Please contact Adveno support or continue showing existing ads."
+                hasUsableLocalAds = false,
+                recoveryTitle = "Unable to synchronize your Ads.",
+                recoveryMessage = "Failed to retrieve Ads after multiple attempts. Please contact Adveno support or sync to retry."
             )
         )
     }

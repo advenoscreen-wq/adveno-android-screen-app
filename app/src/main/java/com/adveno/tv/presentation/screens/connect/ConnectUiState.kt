@@ -12,7 +12,11 @@ data class ConnectUiState(
     val reconnectButtonText: String = "Reconnect",
     val selectedAction: ConnectAction? = null,
     val isLoading: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isNoInternetModalVisible: Boolean = false,
+    val interruptedOperation: String = "",
+    val noInternetStatusMessage: String? = null,
+    val isConnectionRestored: Boolean = false
 )
 
 sealed interface ConnectAction {

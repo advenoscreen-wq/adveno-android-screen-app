@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.adveno.tv.R
 import com.adveno.tv.presentation.components.TvButton
+import com.adveno.tv.presentation.components.TvNoInternetModal
 import com.adveno.tv.presentation.components.TvQrCode
 import com.adveno.tv.presentation.theme.AdvenoBackground
 import com.adveno.tv.presentation.theme.AdvenoDimensions
@@ -95,6 +96,7 @@ fun ScanToConnectScreen(
     ScanToConnectContent(
         uiState = uiState,
         onRefreshClick = { viewModel.refreshSession() },
+        onRetryConnection = { viewModel.retryConnectionFromModal() },
         modifier = modifier
     )
 }
@@ -111,6 +113,7 @@ fun ScanToConnectScreen(
 fun ScanToConnectContent(
     uiState: ScanToConnectUiState,
     onRefreshClick: () -> Unit = {},
+    onRetryConnection: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Focus requester to hold remote focus on the QR container
@@ -277,6 +280,15 @@ fun ScanToConnectContent(
                 }
             }
         }
+
+        // Overlay No Internet Connection modal when network is interrupted
+        TvNoInternetModal(
+            isVisible = uiState.isNoInternetModalVisible,
+            interruptedOperation = uiState.interruptedOperation,
+            statusMessage = uiState.noInternetStatusMessage,
+            isConnectionRestored = uiState.isConnectionRestored,
+            onRetryConnection = onRetryConnection
+        )
     }
 }
 

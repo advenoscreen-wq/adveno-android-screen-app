@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.adveno.tv.core.network.NetworkError
+import com.adveno.tv.core.network.NetworkMonitor
 import com.adveno.tv.core.network.NetworkResult
 import com.adveno.tv.core.storage.PairingSessionStorage
 import com.adveno.tv.domain.model.pairing.PairingType
@@ -29,14 +30,15 @@ sealed interface ConnectingNavigation {
 
 /**
  * ViewModel for the Pairing / Connecting screen.
- * Executes the final pairing API call based on pairing type, persists credentials,
- * manages the 3-attempt automatic retry loop with attempt indicator,
- * and coordinates navigation to Syncing.
+ * Executes final pairing API call based on pairing type, persists credentials,
+ * manages 3-attempt automatic retry loop, handles network disconnects by pausing
+ * without consuming attempts, and coordinates navigation to Syncing.
  */
 class ConnectingViewModel(
     private val registerNewScreenUseCase: RegisterNewScreenUseCase,
     private val issueReconnectCredentialUseCase: IssueReconnectCredentialUseCase,
-    private val sessionStorage: PairingSessionStorage
+    private val sessionStorage: PairingSessionStorage,
+    private val networkMonitor: NetworkMonitor? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ConnectingUiState())
@@ -56,6 +58,30 @@ class ConnectingViewModel(
         private const val RETRY_DELAY_MS = 2000L
     }
 
+    init {
+        observeNetworkConnectivity()
+    }
+
+    private fun observeNetworkConnectivity() {
+        if (networkMonitor == null) return
+        viewModelScope.launch {
+            networkMonitor.isConnectedFlow.collect { isConnected ->
+                if (_uiState.value.isNoInternetModalVisible) {
+                    _uiState.update {
+                        it.copy(
+                            isConnectionRestored = isConnected,
+                            noInternetStatusMessage = if (isConnected) {
+                                "Internet connection restored. Press Retry Connection to continue."
+                            } else {
+                                "Internet is still unavailable. Please check your network or Wi-Fi settings."
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     fun startPairingExecution() {
         val sessionId = sessionStorage.getSessionId()
         val pairingType = sessionStorage.getPairingType() ?: PairingType.NEW_SCREEN
@@ -71,15 +97,32 @@ class ConnectingViewModel(
             return
         }
 
-        executePairingWithRetry(sessionId, pairingType)
+        executePairingWithRetry(sessionId, pairingType, initialAttempt = 1)
     }
 
-    private fun executePairingWithRetry(sessionId: String, pairingType: PairingType) {
+    private fun executePairingWithRetry(sessionId: String, pairingType: PairingType, initialAttempt: Int) {
         pairingJob?.cancel()
         pairingJob = viewModelScope.launch {
-            var attempt = 1
+            var attempt = initialAttempt
+            val opName = if (pairingType == PairingType.NEW_SCREEN) "Screen Registration" else "Screen Reconnection"
 
             while (attempt <= MAX_ATTEMPTS && isActive) {
+                // Check network availability before starting operation
+                if (networkMonitor?.isCurrentlyConnected() == false) {
+                    Log.w(TAG, "No internet before pairing attempt $attempt. Pausing workflow.")
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            currentAttempt = attempt,
+                            isNoInternetModalVisible = true,
+                            interruptedOperation = opName,
+                            noInternetStatusMessage = null,
+                            isConnectionRestored = false
+                        )
+                    }
+                    return@launch
+                }
+
                 _uiState.update {
                     it.copy(
                         isConnected = false,
@@ -87,21 +130,17 @@ class ConnectingViewModel(
                         currentAttempt = attempt,
                         maxAttempts = MAX_ATTEMPTS,
                         isMaxAttemptsReached = false,
+                        isNoInternetModalVisible = false,
                         heading = "Connecting...",
-                        description = if (attempt == 1) {
-                            "Linking this screen to your Adveno account"
-                        } else {
-                            "Linking this screen to your Adveno account (Attempt $attempt of $MAX_ATTEMPTS)"
-                        },
+                        description = "Linking this screen to your Adveno account",
                         errorMessage = null
                     )
                 }
 
-                // Initial transition delay on attempt 1, or retry delay on subsequent attempts
-                if (attempt == 1) {
-                    delay(1500L)
-                } else {
+                if (attempt > 1) {
                     delay(RETRY_DELAY_MS)
+                } else {
+                    delay(1500L)
                 }
 
                 if (!isActive) return@launch
@@ -136,16 +175,37 @@ class ConnectingViewModel(
                                 heading = "Connected!",
                                 description = "Your screen is now connected to Adveno.",
                                 errorMessage = null,
-                                isMaxAttemptsReached = false
+                                isMaxAttemptsReached = false,
+                                isNoInternetModalVisible = false
                             )
                         }
-                        // Present Connected success state before navigating to Syncing Ads
                         delay(3000L)
                         _navigationEvent.emit(ConnectingNavigation.NavigateToSync)
                         return@launch
                     }
                     is NetworkResult.Error -> {
                         val error = result.error
+
+                        // Network interruption: pause workflow without consuming attempt
+                        val isNetworkLoss = error.isNetworkConnectionIssue ||
+                                networkMonitor?.isCurrentlyConnected() == false
+
+                        if (isNetworkLoss) {
+                            Log.w(TAG, "Network disconnected during pairing attempt $attempt. Pausing workflow.")
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    currentAttempt = attempt,
+                                    isNoInternetModalVisible = true,
+                                    interruptedOperation = opName,
+                                    noInternetStatusMessage = null,
+                                    isConnectionRestored = false
+                                )
+                            }
+                            return@launch
+                        }
+
+                        // Permanent error
                         val isPermanent = error is NetworkError.DeviceRevoked ||
                                 (error is NetworkError.HttpError && (error.httpCode == 401 || error.httpCode == 404))
 
@@ -161,6 +221,7 @@ class ConnectingViewModel(
                             return@launch
                         }
 
+                        // Actual operation failure: consume attempt
                         Log.w(TAG, "Pairing attempt $attempt of $MAX_ATTEMPTS failed: ${error.message}")
                         if (attempt >= MAX_ATTEMPTS) {
                             Log.e(TAG, "Maximum connection attempts ($MAX_ATTEMPTS) reached.")
@@ -181,6 +242,38 @@ class ConnectingViewModel(
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Resumes the connection operation from the exact preserved attempt when internet returns.
+     */
+    fun retryConnectionFromModal() {
+        if (networkMonitor?.isCurrentlyConnected() == false) {
+            _uiState.update {
+                it.copy(
+                    noInternetStatusMessage = "Internet is still unavailable. Please check your network or Wi-Fi settings.",
+                    isConnectionRestored = false
+                )
+            }
+            return
+        }
+
+        val preservedAttempt = _uiState.value.currentAttempt
+        _uiState.update {
+            it.copy(
+                isNoInternetModalVisible = false,
+                noInternetStatusMessage = null,
+                isConnectionRestored = false
+            )
+        }
+
+        val sessionId = sessionStorage.getSessionId()
+        val pairingType = sessionStorage.getPairingType() ?: PairingType.NEW_SCREEN
+        if (!sessionId.isNullOrBlank()) {
+            executePairingWithRetry(sessionId, pairingType, initialAttempt = preservedAttempt)
+        } else {
+            startPairingExecution()
         }
     }
 

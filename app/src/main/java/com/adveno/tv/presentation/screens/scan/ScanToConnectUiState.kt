@@ -4,6 +4,7 @@ import com.adveno.tv.domain.model.pairing.PairingSessionStatus
 
 /**
  * UI State for the Scan to Connect screen.
+ * Supports QR code presentation, background polling, and network disconnection handling.
  */
 data class ScanToConnectUiState(
     val brandName: String = "Adveno",
@@ -14,6 +15,9 @@ data class ScanToConnectUiState(
     val isLoading: Boolean = false,
     val status: PairingSessionStatus? = null,
     val isExpired: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isNoInternetModalVisible: Boolean = false,
+    val interruptedOperation: String = "",
+    val noInternetStatusMessage: String? = null,
+    val isConnectionRestored: Boolean = false
 )
-

@@ -70,9 +70,16 @@ suspend inline fun <T> safeApiCall(
     } catch (e: IOException) {
         NetworkResult.Error(NetworkError.NetworkFailure(e))
     } catch (e: Exception) {
-        NetworkResult.Error(
-            NetworkError.Unknown(e.localizedMessage ?: "An unexpected error occurred during API request")
-        )
+        if (NetworkExceptionClassifier.isNetworkException(e)) {
+            NetworkResult.Error(NetworkError.NetworkFailure(e))
+        } else {
+            NetworkResult.Error(
+                NetworkError.Unknown(
+                    message = "An unexpected error occurred during API request",
+                    cause = e
+                )
+            )
+        }
     }
 }
 

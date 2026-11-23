@@ -45,6 +45,10 @@ class AppContainer(val context: Context) {
     }
 
     // Network
+    val networkMonitor: com.adveno.tv.core.network.NetworkMonitor by lazy {
+        com.adveno.tv.core.network.NetworkMonitorImpl(context)
+    }
+
     val okHttpClient: OkHttpClient by lazy {
         NetworkModule.provideOkHttpClient(credentialStorage, sessionStorage)
     }
@@ -70,8 +74,12 @@ class AppContainer(val context: Context) {
         DataModule.provideScreenRemoteDataSource(screenApiService)
     }
 
+    val downloadOkHttpClient: OkHttpClient by lazy {
+        NetworkModule.provideDownloadOkHttpClient()
+    }
+
     val mediaDownloader: MediaDownloader by lazy {
-        DataModule.provideMediaDownloader(okHttpClient, context)
+        DataModule.provideMediaDownloader(downloadOkHttpClient, context)
     }
 
     // Repositories

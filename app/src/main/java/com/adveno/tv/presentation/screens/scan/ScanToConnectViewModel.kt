@@ -3,6 +3,8 @@ package com.adveno.tv.presentation.screens.scan
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.adveno.tv.core.network.NetworkError
+import com.adveno.tv.core.network.NetworkMonitor
 import com.adveno.tv.core.network.NetworkResult
 import com.adveno.tv.core.qr.QrCodeGenerator
 import com.adveno.tv.core.storage.PairingSessionStorage
@@ -29,12 +31,14 @@ sealed interface ScanToConnectNavigation {
 
 /**
  * ViewModel for Scan to Connect.
- * Generates dynamic QR code locally and coordinates the 5-second polling loop.
+ * Generates dynamic QR code locally, coordinates the 5-second polling loop,
+ * and pauses/resumes operations during network disconnections without losing state.
  */
 class ScanToConnectViewModel(
     private val pollPairingStatusUseCase: PollPairingStatusUseCase,
     private val createPairingSessionUseCase: CreatePairingSessionUseCase,
-    private val sessionStorage: PairingSessionStorage
+    private val sessionStorage: PairingSessionStorage,
+    private val networkMonitor: NetworkMonitor? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ScanToConnectUiState())
@@ -49,7 +53,28 @@ class ScanToConnectViewModel(
     private var pollingJob: Job? = null
 
     init {
+        observeNetworkConnectivity()
         initializePairingSession()
+    }
+
+    private fun observeNetworkConnectivity() {
+        if (networkMonitor == null) return
+        viewModelScope.launch {
+            networkMonitor.isConnectedFlow.collect { isConnected ->
+                if (_uiState.value.isNoInternetModalVisible) {
+                    _uiState.update {
+                        it.copy(
+                            isConnectionRestored = isConnected,
+                            noInternetStatusMessage = if (isConnected) {
+                                "Internet connection restored. Press Retry Connection to continue."
+                            } else {
+                                "Internet is still unavailable. Please check your network or Wi-Fi settings."
+                            }
+                        )
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -97,6 +122,7 @@ class ScanToConnectViewModel(
 
     /**
      * Polls GET /api/v1/pairing/sessions/{session_id} every 5 seconds.
+     * Pauses cleanly if network connectivity is lost.
      */
     fun startPolling(sessionId: String) {
         pollingJob?.cancel()
@@ -104,6 +130,20 @@ class ScanToConnectViewModel(
             Log.d("ScanToConnectVM", "Starting 5-second polling loop for session: $sessionId")
             while (isActive) {
                 delay(5000L) // Wait exactly 5 seconds before poll
+
+                // Check connectivity before network request
+                if (networkMonitor?.isCurrentlyConnected() == false) {
+                    Log.w("ScanToConnectVM", "Network lost before polling. Pausing polling loop.")
+                    _uiState.update {
+                        it.copy(
+                            isNoInternetModalVisible = true,
+                            interruptedOperation = "Pairing Status Polling",
+                            noInternetStatusMessage = null,
+                            isConnectionRestored = false
+                        )
+                    }
+                    break
+                }
 
                 when (val result = pollPairingStatusUseCase(sessionId).first()) {
                     is NetworkResult.Success -> {
@@ -141,7 +181,24 @@ class ScanToConnectViewModel(
                         }
                     }
                     is NetworkResult.Error -> {
-                        Log.w("ScanToConnectVM", "Transient polling error: ${result.error.message}")
+                        val error = result.error
+                        val isNetworkIssue = error.isNetworkConnectionIssue ||
+                                networkMonitor?.isCurrentlyConnected() == false
+
+                        if (isNetworkIssue) {
+                            Log.w("ScanToConnectVM", "Network connection lost during polling. Showing No Internet modal.")
+                            _uiState.update {
+                                it.copy(
+                                    isNoInternetModalVisible = true,
+                                    interruptedOperation = "Pairing Status Polling",
+                                    noInternetStatusMessage = null,
+                                    isConnectionRestored = false
+                                )
+                            }
+                            break
+                        } else {
+                            Log.w("ScanToConnectVM", "Transient polling error: ${error.message}")
+                        }
                     }
                     is NetworkResult.Loading -> {
                         // Non-blocking background poll
@@ -157,6 +214,18 @@ class ScanToConnectViewModel(
      */
     fun refreshSession() {
         stopPolling()
+        if (networkMonitor?.isCurrentlyConnected() == false) {
+            _uiState.update {
+                it.copy(
+                    isNoInternetModalVisible = true,
+                    interruptedOperation = "Pairing Session Creation",
+                    noInternetStatusMessage = null,
+                    isConnectionRestored = false
+                )
+            }
+            return
+        }
+
         val type = sessionStorage.getPairingType() ?: PairingType.NEW_SCREEN
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
@@ -168,15 +237,72 @@ class ScanToConnectViewModel(
                         setupQrCodeAndStartPolling(result.data.sessionId, result.data.pairingToken)
                     }
                     is NetworkResult.Error -> {
-                        val msg = result.error.message ?: "Unable to renew pairing session."
-                        _uiState.update {
-                            it.copy(isLoading = false, errorMessage = msg)
+                        val error = result.error
+                        val isNetworkIssue = error.isNetworkConnectionIssue ||
+                                networkMonitor?.isCurrentlyConnected() == false
+
+                        if (isNetworkIssue) {
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    isNoInternetModalVisible = true,
+                                    interruptedOperation = "Pairing Session Creation",
+                                    noInternetStatusMessage = null,
+                                    isConnectionRestored = false
+                                )
+                            }
+                        } else {
+                            val msg = "Unable to renew pairing session. Please try again."
+                            _uiState.update {
+                                it.copy(isLoading = false, errorMessage = msg)
+                            }
                         }
                     }
                     is NetworkResult.Loading -> {
                         _uiState.update { it.copy(isLoading = true) }
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Called when the user clicks 'Retry Connection' from the No Internet modal.
+     */
+    fun retryConnectionFromModal() {
+        if (networkMonitor?.isCurrentlyConnected() == false) {
+            _uiState.update {
+                it.copy(
+                    noInternetStatusMessage = "Internet is still unavailable. Please check your network or Wi-Fi settings.",
+                    isConnectionRestored = false
+                )
+            }
+            return
+        }
+
+        val interruptedOp = _uiState.value.interruptedOperation
+        _uiState.update {
+            it.copy(
+                isNoInternetModalVisible = false,
+                noInternetStatusMessage = null,
+                isConnectionRestored = false
+            )
+        }
+
+        when (interruptedOp) {
+            "Pairing Session Creation" -> {
+                refreshSession()
+            }
+            "Pairing Status Polling" -> {
+                val sessionId = sessionStorage.getSessionId()
+                if (!sessionId.isNullOrBlank()) {
+                    startPolling(sessionId)
+                } else {
+                    refreshSession()
+                }
+            }
+            else -> {
+                initializePairingSession()
             }
         }
     }

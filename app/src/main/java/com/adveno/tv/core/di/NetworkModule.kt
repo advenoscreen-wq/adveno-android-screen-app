@@ -8,6 +8,7 @@ import com.adveno.tv.data.remote.api.PairingApiService
 import com.adveno.tv.data.remote.api.ScreenApiService
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
+import java.util.concurrent.TimeUnit
 
 object NetworkModule {
 
@@ -39,6 +40,21 @@ object NetworkModule {
 
     fun provideScreenApiService(retrofit: Retrofit): ScreenApiService {
         return retrofit.create(ScreenApiService::class.java)
+    }
+
+    /**
+     * Dedicated OkHttpClient optimized for media asset downloads (videos and images).
+     * Configured with extended streaming timeouts, automatic redirects, and no body logging
+     * to prevent high memory usage and buffer overflows during large media transfers.
+     */
+    fun provideDownloadOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .connectTimeout(30L, TimeUnit.SECONDS)
+            .readTimeout(180L, TimeUnit.SECONDS)
+            .writeTimeout(60L, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
     }
 }
 
