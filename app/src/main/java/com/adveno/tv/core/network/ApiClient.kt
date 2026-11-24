@@ -48,6 +48,12 @@ object ApiClient {
             .connectTimeout(NetworkConfig.CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(NetworkConfig.READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(NetworkConfig.WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .header("ngrok-skip-browser-warning", "true")
+                    .build()
+                chain.proceed(request)
+            }
             .addInterceptor(PairingTokenInterceptor(sessionStorage))
             .addInterceptor(AuthInterceptor(credentialStorage))
             .addInterceptor(loggingInterceptor)

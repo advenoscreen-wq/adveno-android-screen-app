@@ -54,6 +54,12 @@ object NetworkModule {
             .writeTimeout(60L, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .header("ngrok-skip-browser-warning", "true")
+                    .build()
+                chain.proceed(request)
+            }
             .build()
     }
 }

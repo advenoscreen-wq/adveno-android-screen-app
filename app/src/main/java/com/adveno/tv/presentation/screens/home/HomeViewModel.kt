@@ -122,8 +122,11 @@ class HomeViewModel(
                     }
                     is NetworkResult.Error -> {
                         val error = result.error
-                        val isNetworkLoss = error.isNetworkConnectionIssue ||
-                                networkMonitor?.isCurrentlyConnected() == false
+                        val isServerAuthError = error is NetworkError.DeviceRevoked ||
+                                (error is NetworkError.HttpError && (error.httpCode == 401 || error.httpCode == 404))
+
+                        val isNetworkLoss = !isServerAuthError &&
+                                (error.isNetworkConnectionIssue || networkMonitor?.isCurrentlyConnected() == false)
 
                         if (isNetworkLoss) {
                             Log.w("HomeViewModel", "Network error during credential verification. Showing No Internet modal.")

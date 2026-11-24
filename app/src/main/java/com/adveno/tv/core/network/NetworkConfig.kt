@@ -10,7 +10,8 @@ object NetworkConfig {
      * Default base URL for backend API endpoints.
      * Note: 10.0.2.2 represents localhost for Android TV emulators.
      */
-    const val DEFAULT_BASE_URL = "https://fdac-2a02-2a40-80fc-a400-c11d-b80f-c8c6-dd92.ngrok-free.app/api/v1/"
+    const val DEFAULT_BASE_URL = "https://6544-188-146-35-12.ngrok-free.app/api/v1/"
+
 
     // Timeouts
     const val CONNECT_TIMEOUT_SECONDS = 15L

@@ -37,8 +37,18 @@ class NetworkMonitorImpl(
         return try {
             val activeNetwork = connectivityManager.activeNetwork ?: return false
             val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+
+            val hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            if (!hasInternet) return false
+
+            // On production devices with Google services, NET_CAPABILITY_VALIDATED confirms WAN reachability.
+            // In Android emulators, local development setups, and private signage networks,
+            // Google's generate_204 check often does not validate even when internet is fully operational.
+            // Therefore, a network is valid if it has NET_CAPABILITY_INTERNET and is not a captive portal.
+            val isValidated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            val isNotCaptivePortal = !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)
+
+            isValidated || isNotCaptivePortal
         } catch (e: Exception) {
             false
         }
@@ -54,9 +64,11 @@ class NetworkMonitorImpl(
                 network: Network,
                 networkCapabilities: NetworkCapabilities
             ) {
-                val hasInternet = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                        networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-                trySend(hasInternet)
+                val hasInternet = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                val isValidated = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                val isNotCaptive = !networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)
+                val isConnected = hasInternet && (isValidated || isNotCaptive)
+                trySend(isConnected)
             }
 
             override fun onLost(network: Network) {
