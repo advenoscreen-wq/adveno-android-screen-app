@@ -307,26 +307,14 @@ class SyncingViewModel(
 
                     val validPlaylist = cachedPlaylist
                     // If no playlist is assigned (HTTP 200 null) or items is empty:
-                    // Treat as valid empty state, not an API failure. Do not retry.
+                    // Treat as valid empty state, not an API failure. Do not retry fetch.
+                    // CRITICAL: Even if playlist is null, acknowledge synchronization with the backend!
                     if (validPlaylist == null || validPlaylist.items.isEmpty()) {
-                        Log.d(TAG, "No Ads assigned to screen (200 null or empty items). Checking local Ads.")
-                        currentStage = SyncStage.IDLE
-                        val hasUsableLocal = hasLocalAds()
-
-                        // Rule: Do not delete existing locally downloaded Ads because the backend has no current assignment.
-                        _uiState.update {
-                            it.copy(
-                                isSynced = true,
-                                hasAdsAvailable = hasUsableLocal,
-                                hasUsableLocalAds = hasUsableLocal,
-                                progress = 1.0f,
-                                heading = "Synced!",
-                                description = "Your Ads are ready.",
-                                isRecoveryMode = false,
-                                errorMessage = null,
-                                isAutoRetrying = false
-                            )
-                        }
+                        Log.d(TAG, "No Ads assigned to screen (null or empty items). Clearing active playlist and advancing directly to acknowledgment.")
+                        activePlaylistStorage?.clearPlaylist()
+                        currentStage = SyncStage.STAGE_C_ACKNOWLEDGE
+                        cachedAckAttempt = 1
+                        runStageCApplyAndAcknowledge()
                         return
                     }
 
@@ -504,54 +492,71 @@ class SyncingViewModel(
     // -------------------------------------------------------------
     private suspend fun runStageCApplyAndAcknowledge() {
         currentStage = SyncStage.STAGE_C_ACKNOWLEDGE
-        val validPlaylist = cachedPlaylist ?: return
-        val sortedItems = validPlaylist.items.sortedBy { it.position }
+        val validPlaylist = cachedPlaylist
         val hasLocal = hasLocalAds()
+        val hasAssignedItems = validPlaylist != null && validPlaylist.items.isNotEmpty()
 
-        Log.d(TAG, "Stage C: Validating downloaded assets and applying active Ads...")
-        _uiState.update {
-            it.copy(
-                progress = 0.88f,
-                heading = "Syncing Ads...",
-                description = "Preparing Ads...",
-                currentAttempt = 1,
-                isAutoRetrying = false,
-                isRecoveryMode = false,
-                isNoInternetModalVisible = false
-            )
-        }
+        if (hasAssignedItems) {
+            val sortedItems = validPlaylist!!.items.sortedBy { it.position }
+            Log.d(TAG, "Stage C: Validating downloaded assets and applying active Ads...")
+            _uiState.update {
+                it.copy(
+                    progress = 0.88f,
+                    heading = "Syncing Ads...",
+                    description = "Preparing Ads...",
+                    currentAttempt = 1,
+                    isAutoRetrying = false,
+                    isRecoveryMode = false,
+                    isNoInternetModalVisible = false
+                )
+            }
 
-        val preparedItems = sortedItems.map { item ->
-            val localFile = mediaDownloader!!.getMediaFile(item.media)
-            if (localFile == null || !localFile.exists() || !localFile.canRead()) {
-                val errorMsg = "Media asset ${item.media.name} is missing or unreadable."
-                Log.e(TAG, errorMsg)
+            val preparedItems = sortedItems.map { item ->
+                val localFile = mediaDownloader!!.getMediaFile(item.media)
+                if (localFile == null || !localFile.exists() || !localFile.canRead()) {
+                    val errorMsg = "Media asset ${item.media.name} is missing or unreadable."
+                    Log.e(TAG, errorMsg)
 
-                if (isManualSyncFromAds) {
-                    _uiState.update { it.copy(isManualSyncFailed = true, isRecoveryMode = false) }
+                    if (isManualSyncFromAds) {
+                        _uiState.update { it.copy(isManualSyncFailed = true, isRecoveryMode = false) }
+                        return
+                    }
+
+                    _uiState.update {
+                        it.copy(
+                            isRecoveryMode = true,
+                            hasUsableLocalAds = hasLocal,
+                            recoveryTitle = "Unable to synchronize your Ads.",
+                            recoveryMessage = "Media file for ${item.media.name} could not be loaded. Please contact Adveno support or sync to retry.",
+                            isAutoRetrying = false
+                        )
+                    }
                     return
                 }
-
-                _uiState.update {
-                    it.copy(
-                        isRecoveryMode = true,
-                        hasUsableLocalAds = hasLocal,
-                        recoveryTitle = "Unable to synchronize your Ads.",
-                        recoveryMessage = "Media file for ${item.media.name} could not be loaded. Please contact Adveno support or sync to retry.",
-                        isAutoRetrying = false
-                    )
-                }
-                return
+                item.copy(media = item.media.copy(localFilePath = localFile.absolutePath))
             }
-            item.copy(media = item.media.copy(localFilePath = localFile.absolutePath))
+
+            // CRITICAL RULE: Apply the newly verified Ads locally FIRST
+            val preparedPlaylist = validPlaylist.copy(items = preparedItems)
+            activePlaylistStorage?.setPlaylist(preparedPlaylist)
+            Log.d(TAG, "Stage C: Prepared Ads successfully applied locally: ${preparedPlaylist.name} (version ${preparedPlaylist.version})")
+        } else {
+            Log.d(TAG, "Stage C: No active Ads assigned. Clearing locally stored playlist data and acknowledging revision.")
+            activePlaylistStorage?.clearPlaylist()
+            _uiState.update {
+                it.copy(
+                    progress = 0.88f,
+                    heading = "Syncing Ads...",
+                    description = "Confirming synchronization...",
+                    currentAttempt = 1,
+                    isAutoRetrying = false,
+                    isRecoveryMode = false,
+                    isNoInternetModalVisible = false
+                )
+            }
         }
 
-        // CRITICAL RULE: Apply the newly verified Ads locally FIRST
-        val preparedPlaylist = validPlaylist.copy(items = preparedItems)
-        activePlaylistStorage?.setPlaylist(preparedPlaylist)
-        Log.d(TAG, "Stage C: Prepared Ads successfully applied locally: ${preparedPlaylist.name} (version ${preparedPlaylist.version})")
-
-        val revisionToAcknowledge = cachedDesiredRevision ?: validPlaylist.version
+        val revisionToAcknowledge = cachedDesiredRevision ?: validPlaylist?.version ?: 1
 
         while (cachedAckAttempt <= MAX_ATTEMPTS) {
             if (networkMonitor?.isCurrentlyConnected() == false) {
@@ -618,12 +623,14 @@ class SyncingViewModel(
 
         // Completion: Transition directly to Synced state
         currentStage = SyncStage.IDLE
-        Log.d(TAG, "Synchronization complete. Content active. Navigating to Ads playback.")
+        val hasUsableLocal = hasLocalAds()
+        val hasAdsAvailable = hasAssignedItems || hasUsableLocal
+        Log.d(TAG, "Synchronization complete. Content active. Navigating to Ads playback (hasAdsAvailable=$hasAdsAvailable, hasUsableLocal=$hasUsableLocal).")
         _uiState.update {
             it.copy(
                 isSynced = true,
-                hasAdsAvailable = true,
-                hasUsableLocalAds = true,
+                hasAdsAvailable = hasAdsAvailable,
+                hasUsableLocalAds = hasUsableLocal,
                 progress = 1.0f,
                 heading = "Synced!",
                 description = "Your Ads are ready.",

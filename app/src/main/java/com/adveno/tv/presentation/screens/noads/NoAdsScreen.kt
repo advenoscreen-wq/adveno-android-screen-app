@@ -8,6 +8,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -50,10 +54,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.adveno.tv.R
 import com.adveno.tv.presentation.components.TvButton
+import com.adveno.tv.presentation.components.TvLogoutConfirmationModal
+import com.adveno.tv.presentation.components.TvReportEventsErrorDialog
 import com.adveno.tv.presentation.theme.AdvenoBackground
 import com.adveno.tv.presentation.theme.AdvenoDimensions
-import com.adveno.tv.presentation.theme.AdvenoError
 import com.adveno.tv.presentation.theme.AdvenoSecondary
+import com.adveno.tv.presentation.theme.AdvenoSuccess
 import com.adveno.tv.presentation.theme.AdvenoSurface
 import com.adveno.tv.presentation.theme.AdvenoTextPrimary
 import com.adveno.tv.presentation.theme.AdvenoTextSecondary
@@ -66,13 +72,19 @@ import com.adveno.tv.presentation.theme.AdvenoTheme
  * - No locally downloaded Ads are available for playback.
  *
  * Strict 16:9 non-scrolling TV layout fitting completely inside viewport.
- * Features side-by-side 'Sync Now' and 'Logout' buttons with confirmation dialog.
+ * Features 'Sync Now', 'Report Events', and 'Logout' buttons with confirmation and error dialogs.
  */
 @Composable
 fun NoAdsScreen(
     onSyncClick: () -> Unit,
     onLogoutClick: () -> Unit = {},
     isLoggingOut: Boolean = false,
+    onReportEventsClick: () -> Unit = {},
+    isReportingEvents: Boolean = false,
+    reportSuccessMessage: String? = null,
+    reportErrorMessage: String? = null,
+    onRetryReport: () -> Unit = {},
+    onCancelReport: () -> Unit = {},
     onBackClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -187,35 +199,35 @@ fun NoAdsScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(if (isPortrait) 54.dp else 46.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0x1F22D3EE)),
+                            .size(if (isPortrait) 62.dp else 54.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0x1822D3EE)),
                         contentAlignment = Alignment.Center
                     ) {
                         Image(
                             painter = painterResource(id = R.drawable.ic_media_image),
-                            contentDescription = "No Ads Illustration",
-                            colorFilter = ColorFilter.tint(AdvenoSecondary),
-                            modifier = Modifier.size(if (isPortrait) 30.dp else 26.dp)
+                            contentDescription = "No Content Assigned",
+                            modifier = Modifier.size(if (isPortrait) 34.dp else 30.dp),
+                            colorFilter = ColorFilter.tint(AdvenoSecondary)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(if (isPortrait) 24.dp else 16.dp))
+                Spacer(modifier = Modifier.height(if (isPortrait) 24.dp else 18.dp))
 
-                // Heading
+                // Main Heading
                 Text(
-                    text = "No Ads Available",
-                    style = MaterialTheme.typography.headlineLarge,
+                    text = "No Ads Assigned",
+                    style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = AdvenoTextPrimary,
-                    fontSize = if (isPortrait) 28.sp else 28.sp,
+                    fontSize = if (isPortrait) 26.sp else 24.sp,
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(if (isPortrait) 12.dp else 8.dp))
 
-                // Description
+                // Explanatory Message
                 Text(
                     text = "No Ads have been assigned to this screen yet. Add Ads from your Adveno dashboard and sync to start playback.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -231,7 +243,7 @@ fun NoAdsScreen(
 
                 Spacer(modifier = Modifier.height(if (isPortrait) 28.dp else 22.dp))
 
-                // Side-by-Side Action Buttons: Sync Now & Logout
+                // Action Buttons: Sync Now, Report Events, & Logout
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -242,6 +254,21 @@ fun NoAdsScreen(
                         leadingIcon = {
                             Image(
                                 painter = painterResource(id = R.drawable.ic_refresh),
+                                contentDescription = null,
+                                colorFilter = ColorFilter.tint(AdvenoTextPrimary),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        modifier = Modifier.widthIn(min = 160.dp)
+                    )
+
+                    TvButton(
+                        text = if (isReportingEvents) "Reporting..." else "Report Events",
+                        onClick = onReportEventsClick,
+                        isLoading = isReportingEvents,
+                        leadingIcon = {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_cloud_upload),
                                 contentDescription = null,
                                 colorFilter = ColorFilter.tint(AdvenoTextPrimary),
                                 modifier = Modifier.size(20.dp)
@@ -262,102 +289,66 @@ fun NoAdsScreen(
                                 modifier = Modifier.size(20.dp)
                             )
                         },
-                        modifier = Modifier.widthIn(min = 175.dp)
+                        modifier = Modifier.widthIn(min = 160.dp)
+                    )
+                }
+            }
+
+            // Floating Success Notification Banner
+            AnimatedVisibility(
+                visible = reportSuccessMessage != null,
+                enter = fadeIn(animationSpec = tween(300)) + slideInVertically(animationSpec = tween(300)) { -20 },
+                exit = fadeOut(animationSpec = tween(300)) + slideOutVertically(animationSpec = tween(300)) { -20 },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = if (isPortrait) 16.dp else 20.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .shadow(12.dp, shape = RoundedCornerShape(24.dp))
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color(0xE60F172A))
+                        .border(1.5.dp, AdvenoSuccess, RoundedCornerShape(24.dp))
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_check),
+                        contentDescription = "Success",
+                        tint = AdvenoSuccess,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = reportSuccessMessage ?: "",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
         }
 
         // Logout Confirmation Dialog
-        if (showLogoutConfirmation) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xD90D131F)),
-                contentAlignment = Alignment.Center
-            ) {
-                AnimatedVisibility(
-                    visible = showLogoutConfirmation,
-                    enter = fadeIn() + scaleIn(initialScale = 0.92f),
-                    exit = fadeOut() + scaleOut(targetScale = 0.92f)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .widthIn(min = 340.dp, max = 480.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(AdvenoSurface)
-                            .border(1.dp, Color(0x33EF4444), RoundedCornerShape(20.dp))
-                            .padding(28.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(56.dp)
-                                    .clip(RoundedCornerShape(28.dp))
-                                    .background(Color(0x1FEF4444)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.ic_logout),
-                                    contentDescription = "Logout Warning Icon",
-                                    colorFilter = ColorFilter.tint(AdvenoError),
-                                    modifier = Modifier.size(28.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            Text(
-                                text = "Disconnect Screen?",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = AdvenoTextPrimary,
-                                fontSize = 22.sp,
-                                textAlign = TextAlign.Center
-                            )
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            Text(
-                                text = "Are you sure you want to log out and disconnect this screen from your Adveno account?",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = AdvenoTextSecondary,
-                                fontSize = 14.sp,
-                                textAlign = TextAlign.Center,
-                                lineHeight = 20.sp
-                            )
-
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                TvButton(
-                                    text = "Cancel",
-                                    onClick = { showLogoutConfirmation = false },
-                                    modifier = Modifier.widthIn(min = 130.dp)
-                                )
-
-                                TvButton(
-                                    text = "Logout",
-                                    onClick = {
-                                        showLogoutConfirmation = false
-                                        onLogoutClick()
-                                    },
-                                    isLoading = isLoggingOut,
-                                    modifier = Modifier.widthIn(min = 130.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+        TvLogoutConfirmationModal(
+            isVisible = showLogoutConfirmation,
+            isLoggingOut = isLoggingOut,
+            onConfirm = {
+                showLogoutConfirmation = false
+                onLogoutClick()
+            },
+            onDismiss = {
+                showLogoutConfirmation = false
             }
-        }
+        )
+
+        // Playback Event Reporting Error Dialog
+        TvReportEventsErrorDialog(
+            isVisible = reportErrorMessage != null,
+            errorMessage = reportErrorMessage,
+            onRetry = onRetryReport,
+            onCancel = onCancelReport
+        )
     }
 }
 

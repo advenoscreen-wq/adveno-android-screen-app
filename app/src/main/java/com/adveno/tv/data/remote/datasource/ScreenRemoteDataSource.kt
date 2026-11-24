@@ -3,8 +3,10 @@ package com.adveno.tv.data.remote.datasource
 import com.adveno.tv.core.network.NetworkResult
 import com.adveno.tv.core.network.safeApiCall
 import com.adveno.tv.data.remote.api.ScreenApiService
+import com.adveno.tv.data.remote.dto.request.PlaybackEventBatchRequest
 import com.adveno.tv.data.remote.dto.request.ScreenSyncAcknowledgmentRequest
 import com.adveno.tv.data.remote.dto.response.AssignedScreenPlaylistResponse
+import com.adveno.tv.data.remote.dto.response.PlaybackEventReportResponse
 import com.adveno.tv.data.remote.dto.response.ScreenSyncCheckResponse
 import com.adveno.tv.data.remote.dto.response.VerifyScreenCredentialResponse
 
@@ -21,6 +23,10 @@ interface ScreenRemoteDataSource {
     suspend fun acknowledgeSync(
         request: ScreenSyncAcknowledgmentRequest
     ): NetworkResult<Unit>
+
+    suspend fun reportPlaybackEvents(
+        request: PlaybackEventBatchRequest
+    ): NetworkResult<PlaybackEventReportResponse>
 
     suspend fun logout(): NetworkResult<Unit>
 }
@@ -49,6 +55,12 @@ class ScreenRemoteDataSourceImpl(
         request: ScreenSyncAcknowledgmentRequest
     ): NetworkResult<Unit> {
         return safeApiCall { apiService.acknowledgeSync(request) }
+    }
+
+    override suspend fun reportPlaybackEvents(
+        request: PlaybackEventBatchRequest
+    ): NetworkResult<PlaybackEventReportResponse> {
+        return safeApiCall { apiService.reportPlaybackEvents(request) }
     }
 
     override suspend fun logout(): NetworkResult<Unit> {

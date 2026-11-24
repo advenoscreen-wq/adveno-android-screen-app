@@ -1,8 +1,10 @@
 package com.adveno.tv.data.remote.api
 
 import com.adveno.tv.core.network.NetworkConfig
+import com.adveno.tv.data.remote.dto.request.PlaybackEventBatchRequest
 import com.adveno.tv.data.remote.dto.request.ScreenSyncAcknowledgmentRequest
 import com.adveno.tv.data.remote.dto.response.AssignedScreenPlaylistResponse
+import com.adveno.tv.data.remote.dto.response.PlaybackEventReportResponse
 import com.adveno.tv.data.remote.dto.response.ScreenSyncCheckResponse
 import com.adveno.tv.data.remote.dto.response.VerifyScreenCredentialResponse
 import retrofit2.Response
@@ -53,6 +55,16 @@ interface ScreenApiService {
     suspend fun acknowledgeSync(
         @Body request: ScreenSyncAcknowledgmentRequest
     ): Response<Unit>
+
+    /**
+     * Reports accumulated ad playback event history to backend
+     * (POST /api/v1/screens/playback-events).
+     * HTTP 202 Accepted with stored_count and duplicate_count.
+     */
+    @POST("screens/playback-events")
+    suspend fun reportPlaybackEvents(
+        @Body request: PlaybackEventBatchRequest
+    ): Response<PlaybackEventReportResponse>
 
     /**
      * Revokes the active screen credential and logs the TV device out

@@ -16,7 +16,11 @@ data class AdsRunningUiState(
     val currentProgress: Float = 0f,
     val isControlsVisible: Boolean = true,
     val isLoggingOut: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isReportingEvents: Boolean = false,
+    val reportSuccessMessage: String? = null,
+    val reportErrorMessage: String? = null,
+    val noAdsAvailable: Boolean = false
 ) {
     val totalItems: Int get() = playlist.size
     val isVideoPlaying: Boolean get() = currentItem is AdItem.Video

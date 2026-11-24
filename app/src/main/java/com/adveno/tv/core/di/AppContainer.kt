@@ -99,6 +99,14 @@ class AppContainer(val context: Context) {
         DataModule.provideSyncRepository(screenRemoteDataSource)
     }
 
+    val playbackEventDatabaseHelper: com.adveno.tv.data.local.PlaybackEventDatabaseHelper by lazy {
+        DataModule.providePlaybackEventDatabaseHelper(context)
+    }
+
+    val playbackEventRepository: com.adveno.tv.domain.repository.PlaybackEventRepository by lazy {
+        DataModule.providePlaybackEventRepository(playbackEventDatabaseHelper)
+    }
+
     // Use Cases
     val createPairingSessionUseCase: CreatePairingSessionUseCase by lazy {
         UseCaseModule.provideCreatePairingSessionUseCase(pairingRepository)
@@ -134,6 +142,10 @@ class AppContainer(val context: Context) {
 
     val acknowledgeSyncUseCase: AcknowledgeSyncUseCase by lazy {
         UseCaseModule.provideAcknowledgeSyncUseCase(syncRepository)
+    }
+
+    val reportPlaybackEventsUseCase: com.adveno.tv.domain.usecase.event.ReportPlaybackEventsUseCase by lazy {
+        UseCaseModule.provideReportPlaybackEventsUseCase(playbackEventRepository, screenRemoteDataSource)
     }
 }
 

@@ -78,5 +78,15 @@ object DataModule {
             context = context
         )
     }
+
+    fun providePlaybackEventDatabaseHelper(context: Context): com.adveno.tv.data.local.PlaybackEventDatabaseHelper {
+        return com.adveno.tv.data.local.PlaybackEventDatabaseHelper(context)
+    }
+
+    fun providePlaybackEventRepository(
+        dbHelper: com.adveno.tv.data.local.PlaybackEventDatabaseHelper
+    ): com.adveno.tv.domain.repository.PlaybackEventRepository {
+        return com.adveno.tv.data.repository.PlaybackEventRepositoryImpl(dbHelper)
+    }
 }
 

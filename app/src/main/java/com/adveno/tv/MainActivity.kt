@@ -142,6 +142,18 @@ class MainActivity : ComponentActivity() {
                                 )
                             },
                             isLoggingOut = adsRunningState.isLoggingOut,
+                            onReportEventsClick = {
+                                adsRunningViewModel.reportEventsManually()
+                            },
+                            isReportingEvents = adsRunningState.isReportingEvents,
+                            reportSuccessMessage = adsRunningState.reportSuccessMessage,
+                            reportErrorMessage = adsRunningState.reportErrorMessage,
+                            onRetryReport = {
+                                adsRunningViewModel.reportEventsManually()
+                            },
+                            onCancelReport = {
+                                adsRunningViewModel.dismissReportError()
+                            },
                             onBackClick = {
                                 currentScreen = Screen.StartConnecting
                             },
@@ -158,6 +170,9 @@ class MainActivity : ComponentActivity() {
                                 syncingViewModel.reset()
                                 syncingViewModel.setManualSyncFromAds(true)
                                 currentScreen = Screen.Syncing
+                            },
+                            onNavigateToNoAds = {
+                                currentScreen = Screen.NoAds
                             },
                             modifier = Modifier.fillMaxSize()
                         )

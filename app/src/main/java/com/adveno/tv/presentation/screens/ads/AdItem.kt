@@ -21,6 +21,11 @@ sealed interface AdItem {
     val title: String
     val durationMs: Long
     val localFilePath: String?
+    val playlistId: String?
+    val playlistItemId: String?
+    val mediaAssetId: String?
+    val playlistVersion: Int?
+    val mediaChecksum: String?
 
     /**
      * Local MP4 video advertisement item.
@@ -31,7 +36,12 @@ sealed interface AdItem {
         override val title: String = "Adveno Video Ad (10s)",
         override val durationMs: Long = 10_000L,
         @RawRes val rawResId: Int? = null,
-        val filePath: String? = null
+        val filePath: String? = null,
+        override val playlistId: String? = null,
+        override val playlistItemId: String? = null,
+        override val mediaAssetId: String? = null,
+        override val playlistVersion: Int? = null,
+        override val mediaChecksum: String? = null
     ) : AdItem {
         override val type: MediaType = MediaType.VIDEO
         override val localFilePath: String? get() = filePath
@@ -46,9 +56,17 @@ sealed interface AdItem {
         override val title: String = "Adveno Display Banner (5s)",
         override val durationMs: Long = 5_000L,
         @DrawableRes val drawableResId: Int? = null,
-        val filePath: String? = null
+        val filePath: String? = null,
+        override val playlistId: String? = null,
+        override val playlistItemId: String? = null,
+        override val mediaAssetId: String? = null,
+        override val playlistVersion: Int? = null,
+        override val mediaChecksum: String? = null
     ) : AdItem {
         override val type: MediaType = MediaType.IMAGE
         override val localFilePath: String? get() = filePath
     }
 }
+
+val AdItem.isRealAd: Boolean
+    get() = !playlistId.isNullOrBlank() && !playlistItemId.isNullOrBlank()

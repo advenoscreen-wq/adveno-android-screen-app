@@ -64,7 +64,9 @@ class ViewModelFactory(
                     credentialStorage = appContainer.credentialStorage,
                     sessionStorage = appContainer.sessionStorage,
                     context = appContainer.context,
-                    activePlaylistStorage = appContainer.activePlaylistStorage
+                    activePlaylistStorage = appContainer.activePlaylistStorage,
+                    playbackEventRepository = appContainer.playbackEventRepository,
+                    reportPlaybackEventsUseCase = appContainer.reportPlaybackEventsUseCase
                 ) as T
             }
             else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

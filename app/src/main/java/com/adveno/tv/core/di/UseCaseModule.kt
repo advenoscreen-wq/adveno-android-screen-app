@@ -51,5 +51,15 @@ object UseCaseModule {
     fun provideAcknowledgeSyncUseCase(repository: SyncRepository): AcknowledgeSyncUseCase {
         return AcknowledgeSyncUseCase(repository)
     }
+
+    fun provideReportPlaybackEventsUseCase(
+        eventRepository: com.adveno.tv.domain.repository.PlaybackEventRepository,
+        screenRemoteDataSource: com.adveno.tv.data.remote.datasource.ScreenRemoteDataSource
+    ): com.adveno.tv.domain.usecase.event.ReportPlaybackEventsUseCase {
+        return com.adveno.tv.domain.usecase.event.ReportPlaybackEventsUseCase(
+            eventRepository = eventRepository,
+            screenRemoteDataSource = screenRemoteDataSource
+        )
+    }
 }
 

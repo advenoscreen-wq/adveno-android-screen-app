@@ -10,7 +10,10 @@ import com.adveno.tv.core.network.NetworkResult
 import com.adveno.tv.core.storage.ActivePlaylistStorage
 import com.adveno.tv.core.storage.PairingSessionStorage
 import com.adveno.tv.core.storage.ScreenCredentialStorage
+import com.adveno.tv.domain.model.event.PlaybackEvent
 import com.adveno.tv.domain.model.playlist.Playlist
+import com.adveno.tv.domain.repository.PlaybackEventRepository
+import com.adveno.tv.domain.usecase.event.ReportPlaybackEventsUseCase
 import com.adveno.tv.domain.usecase.screen.LogoutScreenUseCase
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -18,8 +21,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+import java.util.UUID
 
 /**
  * ViewModel responsible for the digital signage advertisement player:
@@ -30,6 +39,10 @@ import java.io.File
  * - Falls back to default dummy playback if no backend playlist is active.
  * - Auto-hides overlay controls after 3 seconds of user inactivity.
  * - Safe device logout with local media eviction.
+ * - Durably logs ad playback events to SQLite immediately on playback start.
+ * - Automatically reports playback events every 30 minutes in batches up to 100.
+ * - Excludes the currently playing ad's event from reporting batches.
+ * - Supports manual playback event reporting with retry/cancel UI handling.
  */
 class AdsRunningViewModel(
     private val logoutScreenUseCase: LogoutScreenUseCase? = null,
@@ -37,6 +50,8 @@ class AdsRunningViewModel(
     private val sessionStorage: PairingSessionStorage? = null,
     private val context: Context? = null,
     private val activePlaylistStorage: ActivePlaylistStorage? = null,
+    private val playbackEventRepository: PlaybackEventRepository? = null,
+    private val reportPlaybackEventsUseCase: ReportPlaybackEventsUseCase? = null,
     customPlaylist: List<AdItem>? = null
 ) : ViewModel() {
 
@@ -71,6 +86,11 @@ class AdsRunningViewModel(
     private var currentIndex = 0
     private var inactivityJob: Job? = null
     private var adPlaybackJob: Job? = null
+    private var reportingJob: Job? = null
+
+    // Playback event logging & exclusion tracking
+    private var currentPlayingEventId: String? = null
+    private var pendingNoAdsTransition: Boolean = false
 
     private val _uiState = MutableStateFlow(
         AdsRunningUiState(
@@ -87,6 +107,86 @@ class AdsRunningViewModel(
         if (!isCustomPlaylistMode) {
             observeActivePlaylistStorage()
         }
+        startPeriodicReporting()
+    }
+
+    private fun getUtcTimestamp(): String {
+        val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        return format.format(Date())
+    }
+
+    /**
+     * Starts continuous 30-minute background reporting of pending playback events.
+     */
+    private fun startPeriodicReporting() {
+        reportingJob?.cancel()
+        reportingJob = viewModelScope.launch {
+            while (isActive) {
+                delay(30 * 60 * 1000L) // 30 minutes
+                try {
+                    Log.d(TAG, "Triggering 30-minute automatic playback event reporting...")
+                    reportPlaybackEventsUseCase?.invoke(excludeCurrentEventId = currentPlayingEventId)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Automatic reporting interval exception: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Immediately triggers manual report of all pending eligible playback events.
+     * Excludes the currently playing ad's event.
+     */
+    fun reportEventsManually() {
+        if (_uiState.value.isReportingEvents) return
+        _uiState.update {
+            it.copy(
+                isReportingEvents = true,
+                reportErrorMessage = null,
+                reportSuccessMessage = null
+            )
+        }
+
+        viewModelScope.launch {
+            val result = reportPlaybackEventsUseCase?.invoke(excludeCurrentEventId = currentPlayingEventId)
+            when (result) {
+                is NetworkResult.Success -> {
+                    val count = result.data
+                    val msg = if (count > 0) {
+                        "Reported $count event(s) successfully."
+                    } else {
+                        "No pending playback events to report."
+                    }
+                    _uiState.update {
+                        it.copy(
+                            isReportingEvents = false,
+                            reportSuccessMessage = msg
+                        )
+                    }
+                    delay(3500L)
+                    _uiState.update { it.copy(reportSuccessMessage = null) }
+                }
+                is NetworkResult.Error -> {
+                    val errMessage = result.error.message.takeIf { it.isNotBlank() }
+                        ?: "Failed to report playback events. Please check your network connection and retry."
+                    _uiState.update {
+                        it.copy(
+                            isReportingEvents = false,
+                            reportErrorMessage = errMessage
+                        )
+                    }
+                }
+                else -> {
+                    _uiState.update { it.copy(isReportingEvents = false) }
+                }
+            }
+        }
+    }
+
+    fun dismissReportError() {
+        _uiState.update { it.copy(reportErrorMessage = null) }
     }
 
     private fun resolveInitialPlaylist(): List<AdItem> {
@@ -102,20 +202,32 @@ class AdsRunningViewModel(
         viewModelScope.launch {
             activePlaylistStorage?.currentPlaylist?.collect { playlist ->
                 val mapped = mapPlaylistToAdItems(playlist)
-                if (mapped.isNotEmpty() && activeMediaList != mapped) {
-                    Log.d(TAG, "New Ads detected (${mapped.size} items). Switching playback.")
-                    activeMediaList = mapped
-                    currentIndex = 0
-                    adPlaybackJob?.cancel()
-                    _uiState.update {
-                        it.copy(
-                            playlist = activeMediaList,
-                            currentIndex = 0,
-                            currentItem = activeMediaList.firstOrNull(),
-                            currentProgress = 0f
-                        )
+                if (mapped.isNotEmpty()) {
+                    pendingNoAdsTransition = false
+                    if (activeMediaList != mapped) {
+                        Log.d(TAG, "New Ads detected (${mapped.size} items). Switching playback.")
+                        activeMediaList = mapped
+                        currentIndex = 0
+                        adPlaybackJob?.cancel()
+                        _uiState.update {
+                            it.copy(
+                                playlist = activeMediaList,
+                                currentIndex = 0,
+                                currentItem = activeMediaList.firstOrNull(),
+                                currentProgress = 0f,
+                                noAdsAvailable = false
+                            )
+                        }
+                        startPlayback()
                     }
-                    startPlayback()
+                } else {
+                    Log.d(TAG, "Active playlist is empty or cleared.")
+                    if (activeMediaList.any { it.isRealAd }) {
+                        // Safe transition: Wait for currently playing ad to finish before navigating to NoAds
+                        pendingNoAdsTransition = true
+                    } else {
+                        _uiState.update { it.copy(noAdsAvailable = true) }
+                    }
                 }
             }
         }
@@ -155,7 +267,12 @@ class AdsRunningViewModel(
                             id = item.id,
                             title = item.media.name.ifBlank { "Video Ad" },
                             durationMs = durationMs,
-                            filePath = file.absolutePath
+                            filePath = file.absolutePath,
+                            playlistId = playlist.id,
+                            playlistItemId = item.id,
+                            mediaAssetId = item.media.id,
+                            playlistVersion = playlist.version,
+                            mediaChecksum = item.media.checksum
                         )
                     )
                 }
@@ -166,7 +283,12 @@ class AdsRunningViewModel(
                             id = item.id,
                             title = item.media.name.ifBlank { "Banner Ad" },
                             durationMs = (imageDurationSec * 1000L).coerceAtLeast(1000L),
-                            filePath = file.absolutePath
+                            filePath = file.absolutePath,
+                            playlistId = playlist.id,
+                            playlistItemId = item.id,
+                            mediaAssetId = item.media.id,
+                            playlistVersion = playlist.version,
+                            mediaChecksum = item.media.checksum
                         )
                     )
                 }
@@ -216,8 +338,56 @@ class AdsRunningViewModel(
             )
         }
 
+        onAdStarted(currentItem)
+
         if (startTimer) {
             scheduleCurrentAdTimer(currentItem)
+        }
+    }
+
+    /**
+     * Records an ad start event immediately to the local database.
+     */
+    private fun onAdStarted(item: AdItem) {
+        if (item.isRealAd && item.playlistId != null && item.playlistItemId != null && item.mediaAssetId != null) {
+            val eventId = UUID.randomUUID().toString()
+            currentPlayingEventId = eventId
+            val event = PlaybackEvent(
+                eventId = eventId,
+                playlistId = item.playlistId!!,
+                playlistItemId = item.playlistItemId!!,
+                mediaAssetId = item.mediaAssetId!!,
+                playlistVersion = item.playlistVersion ?: 1,
+                mediaChecksum = item.mediaChecksum ?: "",
+                playedAt = getUtcTimestamp(),
+                playedCompleteAt = null
+            )
+            viewModelScope.launch {
+                playbackEventRepository?.recordPlaybackStart(event)
+            }
+        } else {
+            currentPlayingEventId = null
+        }
+    }
+
+    /**
+     * Records natural ad completion and checks for pending empty playlist transition.
+     */
+    private fun onAdCompletedNaturally() {
+        val completedId = currentPlayingEventId
+        if (completedId != null) {
+            val now = getUtcTimestamp()
+            viewModelScope.launch {
+                playbackEventRepository?.recordPlaybackComplete(completedId, now)
+            }
+            currentPlayingEventId = null
+        }
+
+        if (pendingNoAdsTransition) {
+            Log.d(TAG, "Current ad finished. Transitioning to No Ads screen as playlist was cleared.")
+            adPlaybackJob?.cancel()
+            _uiState.update { it.copy(noAdsAvailable = true) }
+            return
         }
     }
 
@@ -243,6 +413,7 @@ class AdsRunningViewModel(
 
             // Duration completed -> loop to the next item
             if (currentIndex == expectedIndex) {
+                onAdCompletedNaturally()
                 advanceToNextItem(startTimer = true)
             }
         }
@@ -263,15 +434,18 @@ class AdsRunningViewModel(
      */
     fun onVideoCompleted(startTimer: Boolean = true) {
         if (_uiState.value.currentItem is AdItem.Video) {
+            onAdCompletedNaturally()
             advanceToNextItem(startTimer = startTimer)
         }
     }
 
     /**
      * Called when video playback encounters an error, safely falling back to the next item.
+     * Leaves played_complete_at as NULL in the database per requirements.
      */
     fun onVideoError(startTimer: Boolean = true) {
         Log.w(TAG, "Video error encountered at index $currentIndex. Advancing.")
+        currentPlayingEventId = null
         advanceToNextItem(startTimer = startTimer)
     }
 
@@ -292,6 +466,8 @@ class AdsRunningViewModel(
                 currentProgress = 0f
             )
         }
+
+        onAdStarted(nextItem)
 
         if (startTimer) {
             scheduleCurrentAdTimer(nextItem)
@@ -438,6 +614,7 @@ class AdsRunningViewModel(
         super.onCleared()
         inactivityJob?.cancel()
         adPlaybackJob?.cancel()
+        reportingJob?.cancel()
     }
 
     companion object {
