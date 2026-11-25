@@ -2,6 +2,7 @@ package com.adveno.tv.presentation.screens.ads
 
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,14 +67,20 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.adveno.tv.R
+import com.adveno.tv.presentation.components.AdminPinDialog
 import com.adveno.tv.presentation.components.TvLogoutConfirmationModal
 import com.adveno.tv.presentation.components.TvPlaybackProgressBar
 import com.adveno.tv.presentation.components.TvReportEventsErrorDialog
 import com.adveno.tv.presentation.components.TvSignageControlPill
 import com.adveno.tv.presentation.theme.AdvenoBackground
 import com.adveno.tv.presentation.theme.AdvenoDimensions
+import com.adveno.tv.presentation.theme.AdvenoSecondary
 import com.adveno.tv.presentation.theme.AdvenoSuccess
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -91,17 +100,16 @@ fun AdsRunningScreen(
     onLogoutClick: () -> Unit,
     onSyncClick: () -> Unit,
     onNavigateToNoAds: () -> Unit = {},
+    onNavigateToProtectedSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showLogoutConfirmation by remember { mutableStateOf(false) }
 
-    // Handle remote Back button: safely show logout confirmation dialog
+    // In kiosk mode, remote back button does not exit the app or show logout
     BackHandler(enabled = !uiState.isLoggingOut) {
         if (showLogoutConfirmation) {
             showLogoutConfirmation = false
-        } else {
-            showLogoutConfirmation = true
         }
     }
 
@@ -111,9 +119,9 @@ fun AdsRunningScreen(
         viewModel.startPlayback()
     }
 
-    // Auto-navigate to No Ads if backend empty assignment transition completed
-    LaunchedEffect(uiState.noAdsAvailable) {
-        if (uiState.noAdsAvailable) {
+    // Auto-navigate to No Ads if backend empty assignment transition completed and no ads exist
+    LaunchedEffect(uiState.noAdsAvailable, uiState.playlist) {
+        if (uiState.noAdsAvailable && uiState.playlist.isEmpty()) {
             onNavigateToNoAds()
         }
     }
@@ -121,6 +129,15 @@ fun AdsRunningScreen(
     AdsRunningScreenContent(
         uiState = uiState,
         showLogoutConfirmation = showLogoutConfirmation,
+        isVerifyingPin = viewModel.isVerifyingPin,
+        pinErrorMessage = viewModel.pinErrorMessage,
+        onVerifyPin = { pin, onSuccess ->
+            viewModel.verifyAdminPin(pin, onSuccess)
+        },
+        onClearPinError = {
+            viewModel.clearPinError()
+        },
+        onNavigateToProtectedSettings = onNavigateToProtectedSettings,
         onUserInteraction = {
             if (!showLogoutConfirmation) {
                 viewModel.onUserInteraction()
@@ -154,21 +171,30 @@ fun AdsRunningScreen(
 
 /**
  * Content Composable for Ads Running.
- * Renders the advertisement media layers, top bar branding, report events, logout button,
- * bottom-right sync button, and bottom progress bar.
+ * Kiosk-style digital signage ad display with:
+ * - Advertisement media layers (ExoPlayer video + image crossfade)
+ * - Auto-hiding overlay branding (no visible administrative controls)
+ * - 5-second Settings/Menu remote key hold detection for Protected Settings
+ * - Dedicated Admin PIN dialog
+ * - Continuous bottom playback progress bar.
  */
 @OptIn(UnstableApi::class)
 @Composable
 fun AdsRunningScreenContent(
     uiState: AdsRunningUiState,
     showLogoutConfirmation: Boolean = false,
+    isVerifyingPin: Boolean = false,
+    pinErrorMessage: String? = null,
+    onVerifyPin: (String, onSuccess: () -> Unit) -> Unit = { _, _ -> },
+    onClearPinError: () -> Unit = {},
+    onNavigateToProtectedSettings: () -> Unit = {},
     onUserInteraction: () -> Unit,
     onVideoCompleted: () -> Unit,
     onVideoError: () -> Unit,
-    onLogoutClick: () -> Unit,
+    onLogoutClick: () -> Unit = {},
     onConfirmLogout: () -> Unit = {},
     onDismissLogout: () -> Unit = {},
-    onSyncClick: () -> Unit,
+    onSyncClick: () -> Unit = {},
     onReportEventsClick: () -> Unit = {},
     onRetryReport: () -> Unit = {},
     onCancelReport: () -> Unit = {},
@@ -320,6 +346,14 @@ fun AdsRunningScreenContent(
         label = "ImageCrossfade"
     )
 
+    // Admin PIN & 5-second D-pad OK/Center key hold state
+    var isHoldingOkKey by remember { mutableStateOf(false) }
+    var holdProgress by remember { mutableStateOf(0f) }
+    var showAdminPinDialog by remember { mutableStateOf(false) }
+    var hasHoldCompleted by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    var holdJob by remember { mutableStateOf<Job?>(null) }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -330,9 +364,67 @@ fun AdsRunningScreenContent(
                     onUserInteraction()
                 }
             }
-            // Capture TV remote key events (D-pad, OK, etc.)
-            .onKeyEvent {
-                onUserInteraction()
+            // Capture TV remote key events (D-pad OK hold for settings, normal navigation, etc.)
+            .onKeyEvent { keyEvent ->
+                val nativeEvent = keyEvent.nativeKeyEvent
+                val keyCode = nativeEvent.keyCode
+                val isOkKey = keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                        keyCode == KeyEvent.KEYCODE_ENTER ||
+                        keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+
+                if (isOkKey) {
+                    if (nativeEvent.action == KeyEvent.ACTION_DOWN) {
+                        if (!showAdminPinDialog) {
+                            if (nativeEvent.repeatCount == 0 && !isHoldingOkKey) {
+                                isHoldingOkKey = true
+                                hasHoldCompleted = false
+                                holdProgress = 0f
+                                holdJob?.cancel()
+                                holdJob = coroutineScope.launch {
+                                    val startTime = System.currentTimeMillis()
+                                    val totalDuration = 3000L
+                                    while (isActive) {
+                                        delay(50L)
+                                        val elapsed = System.currentTimeMillis() - startTime
+                                        holdProgress = (elapsed / totalDuration.toFloat()).coerceIn(0f, 1f)
+                                        if (elapsed >= totalDuration) {
+                                            hasHoldCompleted = true
+                                            isHoldingOkKey = false
+                                            holdProgress = 0f
+                                            showAdminPinDialog = true
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+                            // Consume key event during the hold so normal OK action is not triggered
+                            return@onKeyEvent true
+                        }
+                    } else if (nativeEvent.action == KeyEvent.ACTION_UP) {
+                        holdJob?.cancel()
+                        holdJob = null
+                        val wasHolding = isHoldingOkKey
+                        val completed = hasHoldCompleted
+                        isHoldingOkKey = false
+                        holdProgress = 0f
+
+                        if (completed) {
+                            // Hold completed and opened the dialog: consume this release so it never clicks dialog buttons!
+                            hasHoldCompleted = false
+                            return@onKeyEvent true
+                        }
+
+                        if (!showAdminPinDialog && wasHolding) {
+                            // Short OK press while dialog was not open: normal app behavior
+                            onUserInteraction()
+                            return@onKeyEvent true
+                        }
+                    }
+                }
+
+                if (!showAdminPinDialog) {
+                    onUserInteraction()
+                }
                 false
             }
             .focusable()
@@ -398,8 +490,8 @@ fun AdsRunningScreenContent(
         }
 
         // -------------------------------------------------------------
-        // LAYER 2: Overlay Controls (Top Bar + Sync Button)
-        // Auto-hides after 3 seconds of inactivity
+        // LAYER 2: Overlay Controls (Top Bar Branding & Status Notifications)
+        // Kiosk-style: No visible administrative controls (Sync/Logout/Report).
         // -------------------------------------------------------------
         AnimatedVisibility(
             visible = uiState.isControlsVisible,
@@ -408,7 +500,7 @@ fun AdsRunningScreenContent(
             modifier = Modifier.fillMaxSize()
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                // Top Bar: Branding (Top-Left) and Actions (Top-Right)
+                // Top Bar: Branding Only (Top-Left)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -417,7 +509,7 @@ fun AdsRunningScreenContent(
                             horizontal = if (isPortrait) 20.dp else AdvenoDimensions.spaceXl,
                             vertical = 24.dp
                         ),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.Start,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Top-Left Branding
@@ -435,26 +527,6 @@ fun AdsRunningScreenContent(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
-                        )
-                    }
-
-                    // Top-Right Actions: Report Events + Logout
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TvSignageControlPill(
-                            text = if (uiState.isReportingEvents) "Reporting..." else "Report Events",
-                            iconRes = R.drawable.ic_cloud_upload,
-                            isLoading = uiState.isReportingEvents,
-                            onClick = onReportEventsClick
-                        )
-
-                        TvSignageControlPill(
-                            text = if (uiState.isLoggingOut) "Logging out..." else "Logout",
-                            iconRes = R.drawable.ic_logout,
-                            isLoading = uiState.isLoggingOut,
-                            onClick = onLogoutClick
                         )
                     }
                 }
@@ -526,19 +598,6 @@ fun AdsRunningScreenContent(
                         )
                     }
                 }
-
-                // Bottom-Right Sync Button
-                TvSignageControlPill(
-                    text = "Sync",
-                    iconRes = R.drawable.ic_refresh,
-                    onClick = onSyncClick,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(
-                            end = if (isPortrait) 20.dp else AdvenoDimensions.spaceXl,
-                            bottom = if (isPortrait) 24.dp else 28.dp
-                        )
-                )
             }
         }
 
@@ -569,6 +628,63 @@ fun AdsRunningScreenContent(
             errorMessage = uiState.reportErrorMessage,
             onRetry = onRetryReport,
             onCancel = onCancelReport
+        )
+
+        // -------------------------------------------------------------
+        // LAYER 6: Subtle 5-second Hold Indicator for Protected Settings
+        // -------------------------------------------------------------
+        AnimatedVisibility(
+            visible = isHoldingOkKey && !showAdminPinDialog,
+            enter = fadeIn(animationSpec = tween(200)),
+            exit = fadeOut(animationSpec = tween(200)),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 28.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .shadow(12.dp, shape = RoundedCornerShape(24.dp))
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color(0xE6101522))
+                    .border(1.dp, Color(0xFF3478F6).copy(alpha = 0.6f), RoundedCornerShape(24.dp))
+                    .padding(horizontal = 20.dp, vertical = 10.dp)
+            ) {
+                CircularProgressIndicator(
+                    progress = { holdProgress },
+                    modifier = Modifier.size(20.dp),
+                    color = Color(0xFF3478F6),
+                    trackColor = Color(0x333478F6),
+                    strokeWidth = 2.5.dp
+                )
+                val remainingSeconds = kotlin.math.ceil((3000L * (1f - holdProgress)) / 1000f).toInt().coerceAtLeast(1)
+                Text(
+                    text = "Hold for Settings (${remainingSeconds}s)",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        // -------------------------------------------------------------
+        // LAYER 7: Dedicated Admin PIN Dialog
+        // -------------------------------------------------------------
+        AdminPinDialog(
+            isVisible = showAdminPinDialog,
+            isLoading = isVerifyingPin,
+            errorMessage = pinErrorMessage,
+            onSubmitPin = { pin ->
+                onVerifyPin(pin) {
+                    showAdminPinDialog = false
+                    onNavigateToProtectedSettings()
+                }
+            },
+            onCancel = {
+                showAdminPinDialog = false
+                onClearPinError()
+            }
         )
     }
 }

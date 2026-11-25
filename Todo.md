@@ -1,0 +1,2 @@
+- >The settting popup
+-> Restart playlist not playing

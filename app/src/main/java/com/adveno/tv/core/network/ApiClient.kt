@@ -1,5 +1,6 @@
 package com.adveno.tv.core.network
 
+import com.adveno.tv.core.storage.AdminSessionStorage
 import com.adveno.tv.core.storage.PairingSessionStorage
 import com.adveno.tv.core.storage.ScreenCredentialStorage
 import kotlinx.serialization.json.Json
@@ -35,6 +36,7 @@ object ApiClient {
     fun createOkHttpClient(
         credentialStorage: ScreenCredentialStorage,
         sessionStorage: PairingSessionStorage,
+        adminSessionStorage: AdminSessionStorage? = null,
         isDebug: Boolean = true
     ): OkHttpClient {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
@@ -42,9 +44,10 @@ object ApiClient {
             // Securely redact sensitive credential headers
             redactHeader(NetworkConfig.HEADER_AUTHORIZATION)
             redactHeader(NetworkConfig.HEADER_PAIRING_TOKEN)
+            redactHeader(NetworkConfig.HEADER_ADMIN_SESSION)
         }
 
-        return OkHttpClient.Builder()
+        val builder = OkHttpClient.Builder()
             .connectTimeout(NetworkConfig.CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(NetworkConfig.READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(NetworkConfig.WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -56,6 +59,12 @@ object ApiClient {
             }
             .addInterceptor(PairingTokenInterceptor(sessionStorage))
             .addInterceptor(AuthInterceptor(credentialStorage))
+
+        if (adminSessionStorage != null) {
+            builder.addInterceptor(AdminSessionInterceptor(adminSessionStorage))
+        }
+
+        return builder
             .addInterceptor(loggingInterceptor)
             .build()
     }

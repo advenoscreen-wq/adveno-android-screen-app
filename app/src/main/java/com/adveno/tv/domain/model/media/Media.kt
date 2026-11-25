@@ -1,8 +1,11 @@
 package com.adveno.tv.domain.model.media
 
+import kotlinx.serialization.Serializable
+
 /**
  * Domain entity representing an advertisement media asset.
  */
+@Serializable
 data class Media(
     val id: String,
     val name: String,

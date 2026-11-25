@@ -2,6 +2,9 @@ package com.adveno.tv.presentation.screens.ads
 
 import android.content.Context
 import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.adveno.tv.R
@@ -52,6 +55,7 @@ class AdsRunningViewModel(
     private val activePlaylistStorage: ActivePlaylistStorage? = null,
     private val playbackEventRepository: PlaybackEventRepository? = null,
     private val reportPlaybackEventsUseCase: ReportPlaybackEventsUseCase? = null,
+    private val verifyAdminPinUseCase: com.adveno.tv.domain.usecase.admin.VerifyAdminPinUseCase? = null,
     customPlaylist: List<AdItem>? = null
 ) : ViewModel() {
 
@@ -185,6 +189,53 @@ class AdsRunningViewModel(
         }
     }
 
+    // Admin PIN verification state
+    var isVerifyingPin by mutableStateOf(false)
+        private set
+
+    var pinErrorMessage by mutableStateOf<String?>(null)
+        private set
+
+    fun verifyAdminPin(pin: String, onSuccess: () -> Unit) {
+        if (isVerifyingPin) return
+        isVerifyingPin = true
+        pinErrorMessage = null
+
+        viewModelScope.launch {
+            if (verifyAdminPinUseCase == null) {
+                isVerifyingPin = false
+                pinErrorMessage = "Admin verification service unavailable."
+                return@launch
+            }
+
+            val result = verifyAdminPinUseCase(pin)
+            when (result) {
+                is NetworkResult.Success -> {
+                    isVerifyingPin = false
+                    pinErrorMessage = null
+                    onSuccess()
+                }
+                is NetworkResult.Error -> {
+                    isVerifyingPin = false
+                    val err = result.error
+                    pinErrorMessage = when {
+                        err is NetworkError.DeviceRevoked -> "Screen is not paired or has been disconnected."
+                        err.isNetworkConnectionIssue -> "No internet connection. Please check your network."
+                        err is NetworkError.HttpError && (err.httpCode == 401 || err.httpCode == 403 || err.httpCode == 400) -> "Invalid PIN. Please try again."
+                        else -> err.message.ifBlank { "Invalid PIN. Please try again." }
+                    }
+                }
+                is NetworkResult.Loading -> {
+                    isVerifyingPin = true
+                }
+            }
+        }
+    }
+
+    fun clearPinError() {
+        pinErrorMessage = null
+    }
+
     fun dismissReportError() {
         _uiState.update { it.copy(reportErrorMessage = null) }
     }
@@ -204,9 +255,14 @@ class AdsRunningViewModel(
                 val mapped = mapPlaylistToAdItems(playlist)
                 if (mapped.isNotEmpty()) {
                     pendingNoAdsTransition = false
-                    if (activeMediaList != mapped) {
-                        Log.d(TAG, "New Ads detected (${mapped.size} items). Switching playback.")
-                        activeMediaList = mapped
+                    val needsPlaybackRestart = activeMediaList != mapped ||
+                            _uiState.value.noAdsAvailable ||
+                            _uiState.value.currentItem == null ||
+                            _uiState.value.playlist.isEmpty()
+
+                    activeMediaList = mapped
+                    if (needsPlaybackRestart) {
+                        Log.d(TAG, "New or restored Ads detected (${mapped.size} items). Switching playback.")
                         currentIndex = 0
                         adPlaybackJob?.cancel()
                         _uiState.update {
@@ -219,6 +275,8 @@ class AdsRunningViewModel(
                             )
                         }
                         startPlayback()
+                    } else {
+                        _uiState.update { it.copy(noAdsAvailable = false) }
                     }
                 } else {
                     Log.d(TAG, "Active playlist is empty or cleared.")
@@ -226,7 +284,8 @@ class AdsRunningViewModel(
                         // Safe transition: Wait for currently playing ad to finish before navigating to NoAds
                         pendingNoAdsTransition = true
                     } else {
-                        _uiState.update { it.copy(noAdsAvailable = true) }
+                        activeMediaList = emptyList()
+                        _uiState.update { it.copy(playlist = emptyList(), currentItem = null, noAdsAvailable = true) }
                     }
                 }
             }
@@ -323,7 +382,12 @@ class AdsRunningViewModel(
      */
     fun startPlayback(startTimer: Boolean = true) {
         if (activeMediaList.isEmpty()) {
-            activeMediaList = dummyFallbackPlaylist
+            val fromStorage = resolveInitialPlaylist()
+            if (fromStorage.isNotEmpty()) {
+                activeMediaList = fromStorage
+            } else {
+                activeMediaList = dummyFallbackPlaylist
+            }
         }
 
         val currentItem = activeMediaList.getOrNull(currentIndex)
@@ -332,9 +396,11 @@ class AdsRunningViewModel(
 
         _uiState.update {
             it.copy(
+                playlist = activeMediaList,
                 currentIndex = currentIndex,
                 currentItem = currentItem,
-                currentProgress = 0f
+                currentProgress = 0f,
+                noAdsAvailable = false
             )
         }
 
@@ -564,6 +630,16 @@ class AdsRunningViewModel(
      */
     fun clearAllLocalData() {
         try {
+            // Cancel running playback and reporting jobs
+            inactivityJob?.cancel()
+            adPlaybackJob?.cancel()
+
+            // Clear in-memory active list and flags
+            activeMediaList = emptyList()
+            currentIndex = 0
+            currentPlayingEventId = null
+            pendingNoAdsTransition = false
+
             // 1. Clear secure screen credentials
             credentialStorage?.clearCredential()
 
@@ -588,6 +664,16 @@ class AdsRunningViewModel(
                     adsCacheDir.deleteRecursively()
                 }
             }
+
+            // Reset UI state cleanly to empty
+            _uiState.value = AdsRunningUiState(
+                playlist = emptyList(),
+                currentIndex = 0,
+                currentItem = null,
+                currentProgress = 0f,
+                noAdsAvailable = false,
+                isControlsVisible = true
+            )
             Log.d(TAG, "All local credentials, session tokens, and cached media cleared successfully.")
         } catch (e: Exception) {
             Log.w(TAG, "Error clearing local media or credential storage", e)
@@ -595,17 +681,21 @@ class AdsRunningViewModel(
     }
 
     /**
-     * Resets the player state, timers, and returns to the first item.
+     * Resets the player state, timers, and restores verified ads from storage.
      */
     fun reset() {
         inactivityJob?.cancel()
         adPlaybackJob?.cancel()
         currentIndex = 0
+        pendingNoAdsTransition = false
+        val fromStorage = resolveInitialPlaylist()
+        activeMediaList = fromStorage
         _uiState.value = AdsRunningUiState(
             playlist = activeMediaList,
             currentIndex = 0,
             currentItem = activeMediaList.firstOrNull(),
             currentProgress = 0f,
+            noAdsAvailable = false,
             isControlsVisible = true
         )
     }

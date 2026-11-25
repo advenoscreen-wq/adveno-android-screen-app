@@ -10,7 +10,7 @@ object NetworkConfig {
      * Default base URL for backend API endpoints.
      * Note: 10.0.2.2 represents localhost for Android TV emulators.
      */
-    const val DEFAULT_BASE_URL = "https://6544-188-146-35-12.ngrok-free.app/api/v1/"
+    const val DEFAULT_BASE_URL = "https://81f9-195-66-93-77.ngrok-free.app/api/v1/"
 
 
     // Timeouts
@@ -21,10 +21,12 @@ object NetworkConfig {
     // Standard Backend Headers
     const val HEADER_AUTHORIZATION = "Authorization"
     const val HEADER_PAIRING_TOKEN = "X-Pairing-Token"
+    const val HEADER_ADMIN_SESSION = "X-Admin-Session"
     const val BEARER_PREFIX = "Bearer "
 
     // Internal routing flags to avoid attaching wrong credentials
     const val HEADER_NO_DEVICE_AUTH = "X-Adveno-No-Device-Auth"
     const val HEADER_REQUIRES_PAIRING_TOKEN = "X-Adveno-Requires-Pairing-Token"
+    const val HEADER_REQUIRES_ADMIN_SESSION = "X-Adveno-Requires-Admin-Session"
 }
 

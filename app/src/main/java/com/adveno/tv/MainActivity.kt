@@ -24,6 +24,8 @@ import com.adveno.tv.presentation.screens.home.HomeViewModel
 import com.adveno.tv.presentation.screens.noads.NoAdsScreen
 import com.adveno.tv.presentation.screens.scan.ScanToConnectScreen
 import com.adveno.tv.presentation.screens.scan.ScanToConnectViewModel
+import com.adveno.tv.presentation.screens.settings.ProtectedSettingsScreen
+import com.adveno.tv.presentation.screens.settings.ProtectedSettingsViewModel
 import com.adveno.tv.presentation.screens.syncing.SyncingScreen
 import com.adveno.tv.presentation.screens.syncing.SyncingViewModel
 import com.adveno.tv.presentation.theme.AdvenoTheme
@@ -40,12 +42,21 @@ class MainActivity : ComponentActivity() {
     private val connectingViewModel: ConnectingViewModel by viewModels { viewModelFactory }
     private val syncingViewModel: SyncingViewModel by viewModels { viewModelFactory }
     private val adsRunningViewModel: AdsRunningViewModel by viewModels { viewModelFactory }
+    private val protectedSettingsViewModel: ProtectedSettingsViewModel by viewModels { viewModelFactory }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             AdvenoTheme {
-                var currentScreen by remember { mutableStateOf<Screen>(Screen.StartConnecting) }
+                val initialScreen = remember {
+                    val container = (application as AdvenoApplication).container
+                    if (container.credentialStorage.hasCredential() && container.activePlaylistStorage.hasUsablePlaylist()) {
+                        Screen.AdsRunning
+                    } else {
+                        Screen.StartConnecting
+                    }
+                }
+                var currentScreen by remember { mutableStateOf<Screen>(initialScreen) }
 
                 when (currentScreen) {
                     Screen.StartConnecting -> {
@@ -100,6 +111,7 @@ class MainActivity : ComponentActivity() {
                             onNavigateToSync = {
                                 syncingViewModel.reset()
                                 syncingViewModel.setManualSyncFromAds(false)
+                                adsRunningViewModel.reset()
                                 currentScreen = Screen.Syncing
                             },
                             modifier = Modifier.fillMaxSize()
@@ -132,6 +144,7 @@ class MainActivity : ComponentActivity() {
                             onSyncClick = {
                                 syncingViewModel.reset()
                                 syncingViewModel.setManualSyncFromAds(false)
+                                adsRunningViewModel.reset()
                                 currentScreen = Screen.Syncing
                             },
                             onLogoutClick = {
@@ -157,6 +170,17 @@ class MainActivity : ComponentActivity() {
                             onBackClick = {
                                 currentScreen = Screen.StartConnecting
                             },
+                            onNavigateToProtectedSettings = {
+                                currentScreen = Screen.ProtectedSettings
+                            },
+                            onVerifyPin = { pin, onSuccess ->
+                                adsRunningViewModel.verifyAdminPin(pin, onSuccess)
+                            },
+                            isVerifyingPin = adsRunningViewModel.isVerifyingPin,
+                            pinErrorMessage = adsRunningViewModel.pinErrorMessage,
+                            onClearPinError = {
+                                adsRunningViewModel.clearPinError()
+                            },
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -173,6 +197,30 @@ class MainActivity : ComponentActivity() {
                             },
                             onNavigateToNoAds = {
                                 currentScreen = Screen.NoAds
+                            },
+                            onNavigateToProtectedSettings = {
+                                currentScreen = Screen.ProtectedSettings
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    Screen.ProtectedSettings -> {
+                        ProtectedSettingsScreen(
+                            viewModel = protectedSettingsViewModel,
+                            onExit = {
+                                currentScreen = if (syncingViewModel.hasLocalAds()) {
+                                    Screen.AdsRunning
+                                } else {
+                                    Screen.NoAds
+                                }
+                            },
+                            onNavigateToSync = {
+                                syncingViewModel.reset()
+                                syncingViewModel.setManualSyncFromAds(true)
+                                currentScreen = Screen.Syncing
+                            },
+                            onNavigateToStartConnecting = {
+                                currentScreen = Screen.StartConnecting
                             },
                             modifier = Modifier.fillMaxSize()
                         )

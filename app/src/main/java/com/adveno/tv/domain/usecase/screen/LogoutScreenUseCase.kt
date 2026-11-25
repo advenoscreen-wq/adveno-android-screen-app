@@ -7,8 +7,8 @@ import kotlinx.coroutines.flow.Flow
 class LogoutScreenUseCase(
     private val repository: ScreenRepository
 ) {
-    operator fun invoke(): Flow<NetworkResult<Unit>> {
-        return repository.logoutScreen()
+    operator fun invoke(adminSession: String? = null): Flow<NetworkResult<Unit>> {
+        return repository.logoutScreen(adminSession)
     }
 }
 

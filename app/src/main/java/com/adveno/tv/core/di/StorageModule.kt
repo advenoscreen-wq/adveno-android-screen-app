@@ -16,7 +16,11 @@ object StorageModule {
         return PairingSessionStorage()
     }
 
-    fun provideActivePlaylistStorage(): ActivePlaylistStorage {
-        return ActivePlaylistStorage()
+    fun provideActivePlaylistStorage(context: Context): ActivePlaylistStorage {
+        return ActivePlaylistStorage(context)
+    }
+
+    fun provideAdminSessionStorage(): com.adveno.tv.core.storage.AdminSessionStorage {
+        return com.adveno.tv.core.storage.SecureAdminSessionStorage()
     }
 }

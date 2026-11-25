@@ -25,10 +25,17 @@ interface ScreenRemoteDataSource {
     ): NetworkResult<Unit>
 
     suspend fun reportPlaybackEvents(
-        request: PlaybackEventBatchRequest
+        request: PlaybackEventBatchRequest,
+        adminSession: String? = null
     ): NetworkResult<PlaybackEventReportResponse>
 
-    suspend fun logout(): NetworkResult<Unit>
+    suspend fun verifyAdminPin(
+        pin: String
+    ): NetworkResult<com.adveno.tv.data.remote.dto.response.VerifyAdminPinResponse>
+
+    suspend fun logout(
+        adminSession: String? = null
+    ): NetworkResult<Unit>
 }
 
 class ScreenRemoteDataSourceImpl(
@@ -58,13 +65,24 @@ class ScreenRemoteDataSourceImpl(
     }
 
     override suspend fun reportPlaybackEvents(
-        request: PlaybackEventBatchRequest
+        request: PlaybackEventBatchRequest,
+        adminSession: String?
     ): NetworkResult<PlaybackEventReportResponse> {
-        return safeApiCall { apiService.reportPlaybackEvents(request) }
+        return safeApiCall { apiService.reportPlaybackEvents(request, adminSession) }
     }
 
-    override suspend fun logout(): NetworkResult<Unit> {
-        return safeApiCall { apiService.logout() }
+    override suspend fun verifyAdminPin(
+        pin: String
+    ): NetworkResult<com.adveno.tv.data.remote.dto.response.VerifyAdminPinResponse> {
+        return safeApiCall {
+            apiService.verifyAdminPin(
+                com.adveno.tv.data.remote.dto.request.VerifyAdminPinRequest(pin)
+            )
+        }
+    }
+
+    override suspend fun logout(adminSession: String?): NetworkResult<Unit> {
+        return safeApiCall { apiService.logout(adminSession) }
     }
 }
 

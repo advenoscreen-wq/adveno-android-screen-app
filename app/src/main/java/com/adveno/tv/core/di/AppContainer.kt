@@ -41,7 +41,11 @@ class AppContainer(val context: Context) {
     }
 
     val activePlaylistStorage: ActivePlaylistStorage by lazy {
-        StorageModule.provideActivePlaylistStorage()
+        StorageModule.provideActivePlaylistStorage(context)
+    }
+
+    val adminSessionStorage: com.adveno.tv.core.storage.AdminSessionStorage by lazy {
+        StorageModule.provideAdminSessionStorage()
     }
 
     // Network
@@ -50,7 +54,7 @@ class AppContainer(val context: Context) {
     }
 
     val okHttpClient: OkHttpClient by lazy {
-        NetworkModule.provideOkHttpClient(credentialStorage, sessionStorage)
+        NetworkModule.provideOkHttpClient(credentialStorage, sessionStorage, adminSessionStorage)
     }
 
     val retrofit: Retrofit by lazy {
@@ -146,6 +150,14 @@ class AppContainer(val context: Context) {
 
     val reportPlaybackEventsUseCase: com.adveno.tv.domain.usecase.event.ReportPlaybackEventsUseCase by lazy {
         UseCaseModule.provideReportPlaybackEventsUseCase(playbackEventRepository, screenRemoteDataSource)
+    }
+
+    val verifyAdminPinUseCase: com.adveno.tv.domain.usecase.admin.VerifyAdminPinUseCase by lazy {
+        UseCaseModule.provideVerifyAdminPinUseCase(screenRemoteDataSource, adminSessionStorage)
+    }
+
+    val clearAdminSessionUseCase: com.adveno.tv.domain.usecase.admin.ClearAdminSessionUseCase by lazy {
+        UseCaseModule.provideClearAdminSessionUseCase(adminSessionStorage)
     }
 }
 

@@ -7,6 +7,7 @@ import com.adveno.tv.presentation.screens.connect.ConnectViewModel
 import com.adveno.tv.presentation.screens.connecting.ConnectingViewModel
 import com.adveno.tv.presentation.screens.home.HomeViewModel
 import com.adveno.tv.presentation.screens.scan.ScanToConnectViewModel
+import com.adveno.tv.presentation.screens.settings.ProtectedSettingsViewModel
 import com.adveno.tv.presentation.screens.syncing.SyncingViewModel
 
 /**
@@ -66,7 +67,20 @@ class ViewModelFactory(
                     context = appContainer.context,
                     activePlaylistStorage = appContainer.activePlaylistStorage,
                     playbackEventRepository = appContainer.playbackEventRepository,
-                    reportPlaybackEventsUseCase = appContainer.reportPlaybackEventsUseCase
+                    reportPlaybackEventsUseCase = appContainer.reportPlaybackEventsUseCase,
+                    verifyAdminPinUseCase = appContainer.verifyAdminPinUseCase
+                ) as T
+            }
+            modelClass.isAssignableFrom(ProtectedSettingsViewModel::class.java) -> {
+                ProtectedSettingsViewModel(
+                    logoutScreenUseCase = appContainer.logoutScreenUseCase,
+                    reportPlaybackEventsUseCase = appContainer.reportPlaybackEventsUseCase,
+                    activePlaylistStorage = appContainer.activePlaylistStorage,
+                    credentialStorage = appContainer.credentialStorage,
+                    adminSessionStorage = appContainer.adminSessionStorage,
+                    playbackEventRepository = appContainer.playbackEventRepository,
+                    networkMonitor = appContainer.networkMonitor,
+                    context = appContainer.context
                 ) as T
             }
             else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

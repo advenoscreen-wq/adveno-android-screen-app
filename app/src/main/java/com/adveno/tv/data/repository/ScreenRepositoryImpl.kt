@@ -47,8 +47,8 @@ class ScreenRepositoryImpl(
         }
     }
 
-    override fun logoutScreen(): Flow<NetworkResult<Unit>> = flow {
-        val result = remoteDataSource.logout()
+    override fun logoutScreen(adminSession: String?): Flow<NetworkResult<Unit>> = flow {
+        val result = remoteDataSource.logout(adminSession)
 
         when (result) {
             is NetworkResult.Success -> {

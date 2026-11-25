@@ -63,8 +63,19 @@ interface ScreenApiService {
      */
     @POST("screens/playback-events")
     suspend fun reportPlaybackEvents(
-        @Body request: PlaybackEventBatchRequest
+        @Body request: PlaybackEventBatchRequest,
+        @Header(NetworkConfig.HEADER_ADMIN_SESSION) adminSession: String? = null
     ): Response<PlaybackEventReportResponse>
+
+    /**
+     * Verifies the administrator PIN and establishes a temporary admin session
+     * (POST /api/v1/screens/admin-session/verify).
+     * Requires Authorization: Bearer <screen-credential>.
+     */
+    @POST("screens/admin-session/verify")
+    suspend fun verifyAdminPin(
+        @Body request: com.adveno.tv.data.remote.dto.request.VerifyAdminPinRequest
+    ): Response<com.adveno.tv.data.remote.dto.response.VerifyAdminPinResponse>
 
     /**
      * Revokes the active screen credential and logs the TV device out
@@ -72,6 +83,8 @@ interface ScreenApiService {
      * HTTP 204 No Content with empty response body.
      */
     @POST("screens/logout")
-    suspend fun logout(): Response<Unit>
+    suspend fun logout(
+        @Header(NetworkConfig.HEADER_ADMIN_SESSION) adminSession: String? = null
+    ): Response<Unit>
 }
 

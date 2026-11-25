@@ -15,11 +15,13 @@ object NetworkModule {
     fun provideOkHttpClient(
         credentialStorage: ScreenCredentialStorage,
         sessionStorage: PairingSessionStorage,
+        adminSessionStorage: com.adveno.tv.core.storage.AdminSessionStorage? = null,
         isDebug: Boolean = true
     ): OkHttpClient {
         return ApiClient.createOkHttpClient(
             credentialStorage = credentialStorage,
             sessionStorage = sessionStorage,
+            adminSessionStorage = adminSessionStorage,
             isDebug = isDebug
         )
     }

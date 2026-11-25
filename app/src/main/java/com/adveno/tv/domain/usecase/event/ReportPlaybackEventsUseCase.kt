@@ -23,7 +23,8 @@ class ReportPlaybackEventsUseCase(
 ) {
 
     suspend operator fun invoke(
-        excludeCurrentEventId: String? = null
+        excludeCurrentEventId: String? = null,
+        adminSession: String? = null
     ): NetworkResult<Int> {
         var totalReported = 0
         val batchLimit = 100
@@ -55,7 +56,7 @@ class ReportPlaybackEventsUseCase(
             }
 
             val request = PlaybackEventBatchRequest(events = dtos)
-            val result = screenRemoteDataSource.reportPlaybackEvents(request)
+            val result = screenRemoteDataSource.reportPlaybackEvents(request, adminSession)
 
             when (result) {
                 is NetworkResult.Success -> {

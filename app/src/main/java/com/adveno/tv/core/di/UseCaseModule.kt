@@ -61,5 +61,23 @@ object UseCaseModule {
             screenRemoteDataSource = screenRemoteDataSource
         )
     }
+
+    fun provideVerifyAdminPinUseCase(
+        screenRemoteDataSource: com.adveno.tv.data.remote.datasource.ScreenRemoteDataSource,
+        adminSessionStorage: com.adveno.tv.core.storage.AdminSessionStorage
+    ): com.adveno.tv.domain.usecase.admin.VerifyAdminPinUseCase {
+        return com.adveno.tv.domain.usecase.admin.VerifyAdminPinUseCase(
+            screenRemoteDataSource = screenRemoteDataSource,
+            adminSessionStorage = adminSessionStorage
+        )
+    }
+
+    fun provideClearAdminSessionUseCase(
+        adminSessionStorage: com.adveno.tv.core.storage.AdminSessionStorage
+    ): com.adveno.tv.domain.usecase.admin.ClearAdminSessionUseCase {
+        return com.adveno.tv.domain.usecase.admin.ClearAdminSessionUseCase(
+            adminSessionStorage = adminSessionStorage
+        )
+    }
 }
 
